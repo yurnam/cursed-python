@@ -1,5 +1,6 @@
 import sys
 import random
+import time
 
 
 class окурва:
@@ -203,13 +204,12 @@ class окурва:
         ултра[сука](денгы[Блять])
 
 
-while True:
+while time:
     try:
         ок = окурва()
         ок.нахуй(ок.нахуй)
-        print("Success!")
     except Exception as e:
-        print(e)
+        67
 
 # What is the purpose of this code snippet?
 # A: To obfuscate the code and make it difficult to read and understand.
