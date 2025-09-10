@@ -3,166 +3,181 @@ import random
 import time
 
 
-class окурва:
-    def __ne__(self, other):
+class kurwa:
+    def __ne__(uganda, other):
         return True
 
-    def __eq__(self, other):
+    def __eq__(uganda, other):
         return True
 
-    def нахуй(селф, сука):
-        евал = eval
-        ексек = exec
-        опен = open
-        енгде = ord
-        нет = "!="
-        a = "nmli2japoom41atinj03lao,sm0ji41-n.y4nu4anjilltmil0.rjsas.m9fiociikls24iemii3d40p4lom"
-        енгде = ord
-        ксек = a
-        пенек = 52
-        нексе = 34
-        утрлять = {ксек: енгде, пенек: a, ord: int, len: str, 1: int}
-        y = утрлять[пенек][
-            утрлять[
-                утрлять[
-                    утрлять[ord](утрлять[len](пенек)[селф != селф])
-                    / утрлять[ord](утрлять[len](пенек)[селф != селф])
-                ](утрлять[len](пенек)[селф != селф])
-                / утрлять[
-                    утрлять[ord](утрлять[len](пенек)[селф != селф])
-                    / утрлять[ord](утрлять[len](пенек)[селф != селф])
-                ](утрлять[len](пенек)[селф != селф])
+    def nahuj(uganda, bitch):
+        hedspo = eval
+        eidbpsa = exec
+        nepo = open
+        engde = ord
+        njet = "!="
+        a = ("nmli2japoom41a"
+             "tinj03lao,sm0j"
+             "i41-n.y4nu"
+             "4anjilltm"
+             "il0.rjsas."
+             "m9fiociikls2"
+             "4iemii3d40p4lo"
+             "m")
+        engde = ord
+        ksek = a
+        penek = 52
+        jaws = 34
+        utrljat = {
+            ksek: engde,
+            penek: a,
+            ord: int,
+            len: str,
+            1: int,
+            57: penek,
+            39: jaws
+        }
+        y = utrljat[penek][
+            utrljat[
+                utrljat[
+                    utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                    / utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                ](utrljat[len](penek)[uganda != uganda])
+                / utrljat[
+                    utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                    / utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                ](utrljat[len](penek)[uganda != uganda])
             ](
                 -(
-                    нексе
-                    / утрлять[
-                        утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
-                    ](утрлять[len](пенек)[селф != селф])
+                    jaws
+                    / utrljat[
+                        utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                    ](utrljat[len](penek)[uganda != uganda])
                 )
             )
         ]
         y += (
-            утрлять[пенек][
-                утрлять[ord](
+            utrljat[penek][
+                utrljat[ord](
                     (
-                        нексе
-                        * утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                        jaws
+                        * utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](-(нексе / утрлять[ord](утрлять[len](пенек)[селф != селф])))
+            + utrljat[penek][
+                utrljat[ord](-(jaws / utrljat[ord](utrljat[len](penek)[uganda != uganda])))
             ]
-            + утрлять[пенек][
-                утрлять[
-                    утрлять[ord](утрлять[len](пенек)[селф != селф])
-                    / утрлять[ord](утрлять[len](пенек)[селф != селф])
+            + utrljat[penek][
+                utrljat[
+                    utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                    / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                 ](
                     (
-                        нексе
-                        - утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                        jaws
+                        - utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     )
                 )
             ]
         )
         y += (
-            утрлять[пенек][
-                утрлять[ord](-(нексе / утрлять[ord](утрлять[len](пенек)[селф != селф])))
+            utrljat[penek][
+                utrljat[ord](-(jaws / utrljat[ord](utrljat[len](penek)[uganda != uganda])))
             ]
-            + утрлять[пенек][утрлять[ord]((нексе - пенек + 5))]
+            + utrljat[penek][utrljat[ord]((jaws - penek + 5))]
         )
         y += (
-            утрлять[пенек][
-                утрлять[ord](
+            utrljat[penek][
+                utrljat[ord](
                     -(
-                        нексе
+                        jaws
                         + (
-                            утрлять[ord](утрлять[len](пенек)[селф != селф])
+                            utrljat[ord](utrljat[len](penek)[uganda != uganda])
                             + (
-                                утрлять[ord](утрлять[len](пенек)[селф != селф])
+                                utrljat[ord](utrljat[len](penek)[uganda != uganda])
                                 + (
-                                    утрлять[ord](утрлять[len](пенек)[селф != селф])
-                                    / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                                    utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                                    / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                                 )
                             )
                         )
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](
+            + utrljat[penek][
+                utrljat[ord](
                     -(
-                        нексе
-                        - утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                        jaws
+                        - utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](
+            + utrljat[penek][
+                utrljat[ord](
                     -(
-                        пенек
+                        penek
                         / (
-                            утрлять[ord](утрлять[len](пенек)[селф != селф])
-                            * утрлять[ord](утрлять[len](пенек)[селф != селф])
+                            utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                            * utrljat[ord](utrljat[len](penek)[uganda != uganda])
                         )
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](
+            + utrljat[penek][
+                utrljat[ord](
                     -(
-                        пенек
-                        - нексе
+                        penek
+                        - jaws
                         + (
-                            утрлять[ord](утрлять[len](пенек)[селф != селф])
-                            * утрлять[ord](утрлять[len](пенек)[селф != селф])
+                            utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                            * utrljat[ord](utrljat[len](penek)[uganda != uganda])
                         )
                     )
                 )
             ]
         )
         y += (
-            утрлять[пенек][
-                утрлять[ord](
-                    нексе
-                    + утрлять[ord](утрлять[len](пенек)[селф != селф])
+            utrljat[penek][
+                utrljat[ord](
+                    jaws
+                    + utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     + (
-                        утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                        utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](
+            + utrljat[penek][
+                utrljat[ord](
                     -(
-                        нексе
-                        - утрлять[ord](утрлять[len](пенек)[селф != селф])
-                        / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                        jaws
+                        - utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                        / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                     )
                 )
             ]
-            + утрлять[пенек][
-                утрлять[ord](-(нексе / утрлять[ord](утрлять[len](пенек)[селф != селф])))
+            + utrljat[penek][
+                utrljat[ord](-(jaws / utrljat[ord](utrljat[len](penek)[uganda != uganda])))
             ]
-            + утрлять[пенек][
-                утрлять[ord](
+            + utrljat[penek][
+                utrljat[ord](
                     -(
                         (
-                            нексе
+                            jaws
                             - (
-                                утрлять[ord](утрлять[len](пенек)[селф != селф])
-                                * утрлять[ord](утрлять[len](пенек)[селф != селф])
+                                utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                                * utrljat[ord](utrljat[len](penek)[uganda != uganda])
                             )
                         )
                         / (
-                            утрлять[ord](утрлять[len](пенек)[селф != селф])
+                            utrljat[ord](utrljat[len](penek)[uganda != uganda])
                             + (
-                                утрлять[ord](утрлять[len](пенек)[селф != селф])
-                                / утрлять[ord](утрлять[len](пенек)[селф != селф])
+                                utrljat[ord](utrljat[len](penek)[uganda != uganda])
+                                / utrljat[ord](utrljat[len](penek)[uganda != uganda])
                             )
                         )
                     )
@@ -170,44 +185,50 @@ class окурва:
             ]
         )
         y += (
-            утрлять[пенек][-утрлять[ord]((утрлять[len](пенек)[1]))]
-            + утрлять[пенек][утрлять[ord](пенек - пенек)]
-            + утрлять[пенек][-утрлять[ord](утрлять[len](нексе)[0])]
-            + утрлять[пенек][утрлять[ord](утрлять[len](нексе)[0])]
+            utrljat[penek][-utrljat[ord]((utrljat[len](penek)[1]))]
+            + utrljat[penek][utrljat[ord](penek - penek)]
+            + utrljat[penek][-utrljat[ord](utrljat[len](jaws)[0])]
+            + utrljat[penek][utrljat[ord](utrljat[len](jaws)[0])]
         )
         y += (
-            утрлять[пенек][
-                утрлять[ord]((утрлять[len](нексе)[0]))
-                - утрлять[ord]((утрлять[len](нексе)[1]))
+            utrljat[penek][
+                utrljat[ord]((utrljat[len](jaws)[0]))
+                - utrljat[ord]((utrljat[len](jaws)[1]))
             ]
-            + утрлять[пенек][утрлять[ord](утрлять[len](нексе)[0])]
-            + утрлять[пенек][утрлять[ord](пенек - нексе - 4)]
+            + utrljat[penek][utrljat[ord](utrljat[len](jaws)[0])]
+            + utrljat[penek][utrljat[ord](penek - jaws - 4)]
         )
 
-        ултра = {селф.нахуй: евал, опен: str}
-        Блять = ултра[селф.нахуй](
-            f"(3.061616997868383e-17-0.5j) {нет} (-4) ** -(-1/-2)"
+        ultra = {
+            uganda.nahuj: hedspo, nepo: str
+        }
+
+        blyat = ultra[uganda.nahuj](
+            f"(3.061616997868383e-17-0.5j) {njet} (-4) ** -(-1/-2)"
         )
-        ултра = {
-            Блять: опен,
-            сука: ексек,
-            опен: random.choice,
+        ultra = {
+            blyat: nepo,
+            bitch: eidbpsa,
+            nepo: random.choice,
             __name__: f"{y}(10 **6)",
         }
-        ултра[сука](ултра[__name__])
+        ultra[bitch](ultra[__name__])
 
-        денгы = {Блять: __file__}
-        денгы = {
-            Блять: ултра[Блять](денгы[Блять]).read(),
-            нет: random.choice,
+        when = {
+            blyat: __file__
         }
-        ултра[сука](денгы[Блять])
+
+        when = {
+            blyat: ultra[blyat](when[blyat]).read(),
+            njet: random.choice,
+        }
+        ultra[bitch](when[blyat])
 
 
 while time:
     try:
-        ок = окурва()
-        ок.нахуй(ок.нахуй)
+        okurwa = kurwa()
+        okurwa.nahuj(okurwa.nahuj)
     except Exception as e:
         67
 
