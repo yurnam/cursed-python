@@ -1,306 +1,316 @@
 #!/usr/bin/env python3
-# acc — the "chaos compiler" for Windows (PE32+ x86-64)
-# Usage: ./acc_win.py [file] -> uses all file bytes for chaotic code
-#        ./acc_win.py         -> uses /dev/urandom
-# Produces ./a.exe: PE32+ console binary (x86-64)
+# chaos_dll_runner_hardcoded.py
+# Windows-only. Hardcoded config. No argparse.
 
-import os, sys, struct
+import os, sys, struct, random, time, ctypes
+import multiprocessing as mp
+from pathlib import Path
+import mmap
 
-# --- PE/section layout constants ---
-IMAGE_BASE = 0x140000000
-SECTION_ALIGNMENT = 0x1000
-FILE_ALIGNMENT = 0x200
-TEXT_RVA = 0x1000
-IDATA_RVA = 0x2000
+# ==== HARD-CODED CONFIG (your values) ========================================
+ROOT_DIR             = r"C:\Windows"   # ⚠️ VERY risky. Prefer a safe test folder you control.
+WORKERS              = 800                       # parallel child processes
+TOTAL_DURATION_SEC   = 6000                    # total orchestrator runtime
+CALLS_PER_CHILD      = 111                       # random calls per child
+MAX_ARGS_PER_CALL    = 51                      # 0..N args
+MAX_RANDOM_BUF_BYTES = 8192                     # max buffer size for pointer args
+CHILD_TIMEOUT_SEC    = 121                     # kill/replace child after this many seconds
+SCAN_LIMIT_DLLS      = 20000                    # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
+RNG_SEED             = None                     # set to an int for reproducible chaos, or None
 
-def align_up(x, a): return ( (x + a - 1) // a ) * a
-def s32(x): return struct.pack("<i", x)
-def u16(x): return struct.pack("<H", x)
-def u32(x): return struct.pack("<I", x)
-def u64(x): return struct.pack("<Q", x)
+# --- FAST SCANNING SETTINGS ---
+RECURSIVE            = True                    # False = only top-level of ROOT_DIR (fastest)
+TARGET_DLLS          = 3000                      # stop scanning once we have this many candidates
+SCAN_TIME_BUDGET_SEC = 20.0                      # hard stop for scanning phase
+MAX_EXPORTS_PER_DLL  = 640                       # at most N names per DLL (enough for chaos)
+EXCLUDE_DIR_NAMES    = {
+}
+# Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
+PREPEND_DLL_DIR_TO_PATH = True
+# ============================================================================
 
-def build_idata():
+# --- minimal helpers (x64 PE parsing) ---
+class PEError(Exception): pass
+def _u16(b,o): return struct.unpack_from("<H", b, o)[0]
+def _u32(b,o): return struct.unpack_from("<I", b, o)[0]
+
+# fast header sniff (reads only a few KB)
+def _quick_is_x64_and_has_exports(fp):
     """
-    Build a minimal import table for:
-        KERNEL32.dll: GetStdHandle, WriteFile, ExitProcess, Sleep
-    Returns (idata_bytes, info_dict).
+    Read only headers to decide:
+      - PE32+ (x64)
+      - Has a non-zero export directory
+    Returns (is_x64, export_rva, export_size, num_sections, opt_off, opt_size)
     """
-    funcs = ["GetStdHandle", "WriteFile", "ExitProcess", "Sleep"]
-    content = bytearray()
+    fp.seek(0, os.SEEK_SET)
+    hdr = fp.read(4096)
+    if len(hdr) < 0x100: return (False, 0, 0, 0, 0, 0)
+    if hdr[:2] != b"MZ": return (False, 0, 0, 0, 0, 0)
+    pe = _u32(hdr, 0x3C)
+    if pe + 0xF8 > len(hdr):
+        try:
+            fp.seek(pe, os.SEEK_SET)
+            hdr = fp.read(0x400)
+        except Exception:
+            return (False, 0, 0, 0, 0, 0)
+        if len(hdr) < 0x108: return (False, 0, 0, 0, 0, 0)
+        pe = 0
+    if hdr[pe:pe+4] != b"PE\x00\x00": return (False, 0, 0, 0, 0, 0)
+    fh    = pe + 4
+    mach  = _u16(hdr, fh + 0x00)
+    nsect = _u16(hdr, fh + 0x02)
+    optsz = _u16(hdr, fh + 0x10)
+    opt   = fh + 20
+    if opt + 0x74 > len(hdr): return (False, 0, 0, 0, 0, 0)
+    magic = _u16(hdr, opt + 0x00)
+    if not (magic == 0x20B and mach == 0x8664):
+        return (False, 0, 0, 0, 0, 0)
+    exp_rva = _u32(hdr, opt + 0x70 + 0)  # export dir RVA
+    exp_sz  = _u32(hdr, opt + 0x70 + 4)
+    return (True, exp_rva, exp_sz, nsect, opt, optsz)
 
-    # Reserve space for two IMAGE_IMPORT_DESCRIPTORs (one real + null)
-    desc_off = 0
-    content += b"\x00" * 40
+def _rva_to_off_mapped(rva, sections, data_len):
+    random.shuffle(sections)
+    for va, vsz, ptr, rsz in sections:
+        end = va + max(vsz, rsz)
+        if va <= rva < end and 0 <= ptr < data_len:
+            off = ptr + (rva - va)
+            if 0 <= off < data_len:
+                return off
+    return None
 
-    # ILT (OriginalFirstThunk)
-    ilt_off = len(content)
-    content += b"\x00" * (8 * (len(funcs) + 1))
-
-    # IAT (FirstThunk)
-    iat_off = len(content)
-    content += b"\x00" * (8 * (len(funcs) + 1))
-
-    # DLL name
-    dll_name = b"KERNEL32.dll\x00"
-    dll_name_off = len(content)
-    content += dll_name
-    if len(content) & 1: content += b"\x00"  # 2-byte align for hints
-
-    # Hint/Name entries
-    hn_offs = {}
-    for fn in funcs:
-        off = len(content)
-        hn_offs[fn] = off
-        content += u16(0) + fn.encode('ascii') + b"\x00"
-        if len(content) & 1: content += b"\x00"
-
-    # Fill ILT and IAT with RVA to Hint/Name entries
-    for i, fn in enumerate(funcs):
-        rva_hn = IDATA_RVA + hn_offs[fn]
-        content[ilt_off + i*8: ilt_off + (i+1)*8] = u64(rva_hn)
-        content[iat_off + i*8: iat_off + (i+1)*8] = u64(rva_hn)
-
-    # Fill real IMAGE_IMPORT_DESCRIPTOR
-    imp_desc = struct.pack("<IIIII",
-        IDATA_RVA + ilt_off,        # OriginalFirstThunk (ILT)
-        0,                          # TimeDateStamp
-        0,                          # ForwarderChain
-        IDATA_RVA + dll_name_off,   # Name
-        IDATA_RVA + iat_off         # FirstThunk (IAT)
-    )
-    content[desc_off:desc_off+20] = imp_desc  # null-terminator desc already zero
-
-    info = {
-        'IAT_RVA':             IDATA_RVA + iat_off,
-        'GetStdHandle_IAT_RVA':IDATA_RVA + iat_off + 0*8,
-        'WriteFile_IAT_RVA':   IDATA_RVA + iat_off + 1*8,
-        'ExitProcess_IAT_RVA': IDATA_RVA + iat_off + 2*8,
-        'Sleep_IAT_RVA':       IDATA_RVA + iat_off + 3*8,
-    }
-    return bytes(content), info
-
-def generate_chaotic_code_windows(input_bytes: bytes):
+def parse_exports_x64_fast(path, max_names=MAX_EXPORTS_PER_DLL):
     """
-    Emit x86-64 code that:
-      - Reserves 4 KiB on stack (RBX points to it)
-      - Grabs stdout handle via GetStdHandle(-11) into R12
-      - Loops over input bytes to do chaotic ops; op==4 -> WriteFile(h, RBX, 8, &written, NULL)
-      - op==5 -> Sleep(1) to occasionally yield
-    Returns (code_bytes, patch_sites), where patch_sites are 'call [rip+rel32]' to fill.
+    mmap the file; grab at most max_names exported function names
+    (skip forwarded exports). Returns (True, names) for x64 DLLs,
+    or (False, []) otherwise.
     """
-    code = bytearray()
-    patch_sites = []  # items: (pos, "GetStdHandle"/"WriteFile"/"Sleep"/"ExitProcess")
+    try:
+        with open(path, "rb") as f:
+            ok, exp_rva, exp_sz, nsects, opt, optsz = _quick_is_x64_and_has_exports(f)
+            if not ok or exp_rva == 0:
+                return (False, [])
+            mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    except Exception:
+        return (False, [])
+    data = mm
 
-    def call_iat(tag):
-        pos = len(code)
-        code.extend(b"\xFF\x15\x00\x00\x00\x00")  # call qword [rip+rel32]
-        patch_sites.append((pos, tag))
+    # section headers
+    shoff = opt + optsz
+    sections = []
+    for i in range(nsects):
+        so = shoff + i*40
+        if so + 40 > len(data): break
+        vsz  = _u32(data, so + 0x08)
+        va   = _u32(data, so + 0x0C)
+        rsz  = _u32(data, so + 0x10)
+        ptr  = _u32(data, so + 0x14)
+        sections.append((va, vsz, ptr, rsz))
 
-    # Initialize a few regs from data (like original)
-    for i in range(0, min(8, len(input_bytes))):
-        val = input_bytes[i]
-        reg = [b"\x48\xC7\xC0", b"\x48\xC7\xC3", b"\x48\xC7\xC1", b"\x48\xC7\xC2"][i % 4]  # mov rAX/rBX/rCX/rDX, imm32
-        code += reg + bytes([val, 0, 0, 0])
+    exp_off = _rva_to_off_mapped(exp_rva, sections, len(data))
+    if exp_off is None or exp_off + 40 > len(data):
+        mm.close(); return (True, [])
 
-    # Reserve 4KiB and set RBX = RSP (our buffer)
-    code += b"\x48\x81\xEC\x00\x10\x00\x00"   # sub rsp, 0x1000
-    code += b"\x48\x89\xE3"                   # mov rbx, rsp
+    num_funcs = _u32(data, exp_off + 0x14)
+    num_names = _u32(data, exp_off + 0x18)
+    aof_rva   = _u32(data, exp_off + 0x1C)
+    aon_rva   = _u32(data, exp_off + 0x20)
+    aoo_rva   = _u32(data, exp_off + 0x24)
+    if num_names == 0 or not (aof_rva and aon_rva and aoo_rva):
+        mm.close(); return (True, [])
 
-    # GetStdHandle(STD_OUTPUT_HANDLE = -11) -> RAX, save in R12
-    code += b"\x48\x83\xEC\x28"               # sub rsp, 0x28 (shadow+align)
-    code += b"\x48\xB9" + struct.pack("<Q", 0xFFFFFFFFFFFFFFF5)  # mov rcx, -11 (imm64)
-    call_iat('GetStdHandle')
-    code += b"\x48\x83\xC4\x28"               # add rsp, 0x28
-    code += b"\x49\x89\xC4"                   # mov r12, rax
+    aof = _rva_to_off_mapped(aof_rva, sections, len(data))
+    aon = _rva_to_off_mapped(aon_rva, sections, len(data))
+    aoo = _rva_to_off_mapped(aoo_rva, sections, len(data))
+    if None in (aof, aon, aoo):
+        mm.close(); return (True, [])
 
-    loop_top = len(code)
+    names = []
+    exp_end = exp_rva + max(1, exp_sz)
+    limit = min(num_names, max_names)
+    indices = range(num_names)
+    if num_names > limit:
+        try:
+            indices = random.sample(range(num_names), limit)
+        except ValueError:
+            indices = range(limit)
+    for i in indices:
 
-    # Main chaotic loop
-    for i in range(0, len(input_bytes), 4):
-        chunk = input_bytes[i:i+4]
-        op = chunk[0] % 6 if chunk else 0
-        val = int.from_bytes(chunk, "little") % 0x1000 if chunk else 0
+        name_rva = _u32(data, aon + 4*i)
+        name_off = _rva_to_off_mapped(name_rva, sections, len(data))
+        if name_off is None: continue
+        j = name_off
+        try:
+            while j < len(data) and data[j] != 0: j += 1
+            nm = bytes(data[name_off:j]).decode("ascii", errors="strict")
+        except Exception:
+            continue
+        if not nm: continue
+        ord_ = _u16(data, aoo + 2*i)
+        if ord_ >= num_funcs: continue
+        fn_rva = _u32(data, aof + 4*ord_)
+        if exp_rva <= fn_rva < exp_end:  # forwarder
+            continue
+        names.append(nm)
 
-        # keep RBX inside our 4KiB every ~256 iterations
-        if i % 256 == 0:
-            code += b"\x48\x89\xE3"           # mov rbx, rsp
+    mm.close()
+    names = list(dict.fromkeys(names))
+    return (True, names)
 
-        if op == 0:
-            code += b"\x48\x05" + s32(val)    # add rax, imm32
-        elif op == 1:
-            code += b"\x48\x81\xF3" + s32(val)# xor rbx, imm32
-        elif op == 2:
-            code += b"\x48\x81\xE9" + s32(val)# sub rcx, imm32
-        elif op == 3:
-            code += b"\x48\x89\x03"           # mov [rbx], rax
-            code += b"\x48\x83\xC3\x08"       # add rbx, 8
-        elif op == 4:
-            # WriteFile(h=R12, buf=RBX, 8, &written, NULL)
-            # Windows x64 ABI: RCX,RDX,R8,R9 + 32-byte shadow space, keep 16B alignment
-            code += b"\x48\x83\xEC\x38"       # sub rsp, 0x38 (shadow 0x20 + args + align)
-            code += b"\x4C\x89\xE1"           # mov rcx, r12
-            code += b"\x48\x89\xDA"           # mov rdx, rbx
-            code += b"\x41\xB8\x08\x00\x00\x00"      # mov r8d, 8
-            code += b"\x4C\x8D\x4C\x24\x28"          # lea r9, [rsp+0x28]  ; LPDWORD written
-            code += b"\x48\xC7\x44\x24\x20\x00\x00\x00\x00"  # [rsp+0x20] = NULL (LPOVERLAPPED)
-            call_iat('WriteFile')
-            code += b"\x48\x83\xC4\x38"       # add rsp, 0x38
-        elif op == 5:
-            # Sleep(1) to yield a bit
-            code += b"\x48\x83\xEC\x28"       # sub rsp, 0x28
-            code += b"\xB9\x01\x00\x00\x00"   # mov ecx, 1
-            call_iat('Sleep')
-            code += b"\x48\x83\xC4\x28"       # add rsp, 0x28
+def scan_x64_dlls_fast(root):
+    """
+    Stream the tree, prune dirs, stop early by TARGET_DLLS or SCAN_TIME_BUDGET_SEC.
+    Returns list[(path, [names])].
+    """
+    t0 = time.time()
+    picked = []
 
-    # jmp back to loop_top
-    off_jmp = len(code)
-    code += b"\xE9\x00\x00\x00\x00"
-    code_va = IMAGE_BASE + TEXT_RVA
-    rip_after = code_va + off_jmp + 5
-    rel = (code_va + loop_top) - rip_after
-    code[off_jmp+1:off_jmp+5] = s32(rel)
+    def should_skip_dir(dname):
+        return dname.lower() in {n.lower() for n in EXCLUDE_DIR_NAMES}
 
-    return bytes(code), patch_sites
+    if not RECURSIVE:
+        try:
+            with os.scandir(root) as it:
+                random.shuffle(it)
+                for e in it:
+                    if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+                        break
+                    if not e.is_file() or not (e.name.lower().endswith(".dll")  or e.name.lower().endswith(".exe")):
+                        continue
+                    ok, names = parse_exports_x64_fast(e.path)
+                    if ok and names:
+                        picked.append((e.path, names))
+        except:
+            pass
+        return picked
 
-def build_pe_exe(code: bytes, idata_bytes: bytes, idata_info: dict, patches):
-    # Patch all 'call [rip+rel32]' sites to point at the IAT entries
-    code = bytearray(code)
-    text_va = IMAGE_BASE + TEXT_RVA
-    tag_to_rva = {
-        'GetStdHandle': idata_info['GetStdHandle_IAT_RVA'],
-        'WriteFile':    idata_info['WriteFile_IAT_RVA'],
-        'ExitProcess':  idata_info['ExitProcess_IAT_RVA'],
-        'Sleep':        idata_info['Sleep_IAT_RVA'],
-    }
-    for pos, tag in patches:
-        target = IMAGE_BASE + tag_to_rva[tag]
-        rip_after = text_va + pos + 6  # after 'FF 15 <disp32>'
-        disp = target - rip_after
-        code[pos+2:pos+6] = s32(disp)
-    code = bytes(code)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
+        random.shuffle(filenames)
+        for fn in filenames:
+            if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+                return picked
+            if not (fn.lower().endswith(".dll") or fn.lower().endswith(".exe")): continue
+            p = os.path.join(dirpath, fn)
+            ok, names = parse_exports_x64_fast(p)
+            if ok and names:
+                picked.append((p, names))
+    return picked
 
-    # --- Build PE headers ---
-    nsections = 2  # .text, .idata
+# --- child worker: load DLL & call random export a few times ---
+def child_worker(path_str, func_name, iterations, max_args, max_buf, seed):
+    random.seed(seed)
+    path = Path(path_str)
+    if PREPEND_DLL_DIR_TO_PATH:
+        os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+    try:
+        lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
+    except Exception:
+        return
+    try:
+        fn = getattr(lib, func_name)
+    except Exception:
+        return
+    fn.restype = ctypes.c_uint64  # generic 64-bit return
 
-    # DOS header (64 bytes) with e_lfanew -> 0x80
-    dos = bytearray(64)
-    dos[0:2] = b"MZ"
-    dos[60:64] = u32(0x80)
+    bufs = []
+    for _ in range(8):
+        sz = random.randint(0, max(1, max_buf))
+        buf = ctypes.create_string_buffer(os.urandom(sz) if sz > 0 else b"")
+        bufs.append(buf)
 
-    headers = bytearray()
-    headers += dos
-    headers += b"\x00" * (0x80 - len(headers))
-    headers += b"PE\x00\x00"  # NT signature
+    for _ in range(iterations):
+        nargs = random.randint(0, max_args)
+        args = []
+        for __ in range(nargs):
+            kind = random.randint(0, 4)
+            if kind == 0:
+                args.append(ctypes.c_uint64(random.getrandbits(64)))
+            elif kind == 1:
+                args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
+            elif kind == 2:
+                args.append(ctypes.c_void_p(0))  # NULL
+            elif kind == 3:
+                b = random.choice(bufs)
+                args.append(ctypes.cast(b, ctypes.c_void_p))
+            else:
+                b = random.choice(bufs)
+                pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
+                args.append(ctypes.cast(pptr, ctypes.c_void_p))
+        try:
+            _ = fn(*args)
+        except Exception:
+            pass  # child can crash/hang; orchestrator will replace it
 
-    # COFF File Header
-    Machine = 0x8664
-    SizeOfOptionalHeader = 240  # PE32+
-    Characteristics = 0x0022     # EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
-    coff = struct.pack("<HHIIIHH",
-        Machine, nsections, 0, 0, 0,
-        SizeOfOptionalHeader, Characteristics
+# --- orchestration ---
+def spawn_one(dlls, calls_per_child, max_args, max_buf):
+    path, names = random.choice(dlls)
+    func = random.choice(names)
+    seed = random.getrandbits(64)
+    proc = mp.Process(
+        target=child_worker,
+        args=(path, func, calls_per_child, max_args, max_buf, seed),
+        daemon=True
     )
-    headers += coff
+    proc.start()
+    return proc, path, func, time.time()
 
-    # Optional Header (PE32+)
-    SizeOfCode = align_up(len(code), FILE_ALIGNMENT)
-    SizeOfInitData = align_up(len(idata_bytes), FILE_ALIGNMENT)
-    AddressOfEntryPoint = TEXT_RVA
-    BaseOfCode = TEXT_RVA
-    SizeOfImage = align_up(IDATA_RVA + len(idata_bytes), SECTION_ALIGNMENT)
-    SizeOfHeaders = align_up(0x80 + 4 + 20 + SizeOfOptionalHeader + (nsections*40), FILE_ALIGNMENT)
+def orchestrate():
+    if os.name != "nt":
+        print("[-] Windows-only.", file=sys.stderr); sys.exit(2)
+    if ctypes.sizeof(ctypes.c_void_p) != 8:
+        print("[-] Use 64-bit Python to call x64 DLLs.", file=sys.stderr); sys.exit(2)
+    if RNG_SEED is not None:
+        random.seed(RNG_SEED)
 
-    opt_fmt = "<HBBIII" "IIQII" "HHHHHH" "IIIIHH" "QQQQII"
-    opt = struct.pack(opt_fmt,
-        0x20B,             # Magic (PE32+)
-        14, 0,             # Linker version
-        SizeOfCode, SizeOfInitData, 0,
-        AddressOfEntryPoint, BaseOfCode,
-        IMAGE_BASE, SECTION_ALIGNMENT, FILE_ALIGNMENT,
-        6, 0,              # OS version 6.0
-        0, 0,              # Image version
-        6, 0,              # Subsystem version 6.0
-        0,                 # Win32VersionValue
-        SizeOfImage, SizeOfHeaders,
-        0,                 # CheckSum (let OS compute)
-        3,                 # Subsystem: WINDOWS_CUI
-        0x0000,            # DllCharacteristics (no ASLR)
-        0x00100000, 0x00001000,   # Stack reserve/commit
-        0x00100000, 0x00001000,   # Heap reserve/commit
-        0, 16             # LoaderFlags, NumberOfRvaAndSizes
-    )
-    headers += opt
+    dlls = scan_x64_dlls_fast(ROOT_DIR)
+    if not dlls:
+        print("[-] No suitable DLLs found."); sys.exit(1)
 
-    # Data directories (16 entries)
-    dd = [ (0,0) ] * 16
-    dd[1]  = (IDATA_RVA, len(idata_bytes))            # Import Directory
-    dd[12] = (idata_info['IAT_RVA'], 8*(4+1))         # IAT
-    for rva, sz in dd:
-        headers += struct.pack("<II", rva, sz)
+    procs = []
+    t0 = time.time()
+    # prefill
+    for _ in range(WORKERS):
+        try:
+            p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES)
+            procs.append((p, path, fn, started))
+        except Exception:
+            pass
 
-    # Section headers
-    text_raw_ptr  = SizeOfHeaders
-    text_raw_size = align_up(len(code), FILE_ALIGNMENT)
-    idata_raw_ptr = text_raw_ptr + text_raw_size
-    idata_raw_size= align_up(len(idata_bytes), FILE_ALIGNMENT)
+    while time.time() - t0 < TOTAL_DURATION_SEC:
+        time.sleep(0.05)
+        new = []
+        now = time.time()
+        for (p, path, fn, started) in procs:
+            alive = p.is_alive()
+            timed_out = (now - started) > CHILD_TIMEOUT_SEC
+            if not alive or timed_out:
+                if alive and timed_out:
+                    try: p.terminate()
+                    except Exception: pass
+                try:
+                    np, npath, nfn, nstart = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES)
+                    new.append((np, npath, nfn, nstart))
+                except Exception:
+                    pass
+            else:
+                new.append((p, path, fn, started))
+        procs = new
 
-    # .text
-    headers += struct.pack("<8sIIIIIIHHI",
-        b".text\x00\x00\x00",
-        len(code), TEXT_RVA, text_raw_size, text_raw_ptr,
-        0,0,0,0,
-        0x60000020   # code | execute | read
-    )
-    # .idata
-    headers += struct.pack("<8sIIIIIIHHI",
-        b".idata\x00\x00",
-        len(idata_bytes), IDATA_RVA, idata_raw_size, idata_raw_ptr,
-        0,0,0,0,
-        0x40000040   # initialized data | read
-    )
-
-    # Pad headers to SizeOfHeaders
-    if len(headers) > SizeOfHeaders:
-        raise SystemExit("Headers too large!")
-    headers += b"\x00" * (SizeOfHeaders - len(headers))
-
-    # File assembly
-    out = bytearray()
-    out += headers
-    out += code
-    out += b"\x00" * (text_raw_size - len(code))
-    out += idata_bytes
-    out += b"\x00" * (idata_raw_size - len(idata_bytes))
-    return bytes(out)
+    # cleanup
+    for (p, _, _, _) in procs:
+        if p.is_alive():
+            try: p.terminate()
+            except Exception: pass
 
 def main():
-    source_path = sys.argv[1] if len(sys.argv) >= 2 else None
-    if source_path:
-        try:
-            with open(source_path, "rb") as f:
-                data = f.read()
-            if not data:
-                raise ValueError("Input file is empty.")
-            print(f"[+] using {source_path} (all {len(data)} bytes)")
-        except Exception as e:
-            print(f"[-] failed to read {source_path}: {e}", file=sys.stderr)
-            sys.exit(2)
-    else:
-        data = os.urandom(8 * 1024)
-        print(f"[+] using /dev/urandom ({len(data)} bytes)")
-
-    # Build sections
-    idata_bytes, idata_info = build_idata()
-    code, patches = generate_chaotic_code_windows(data)
-    pe = build_pe_exe(code, idata_bytes, idata_info, patches)
-
-    out = "a.exe"
-    with open(out, "wb") as f:
-        f.write(pe)
-    print(f"[+] wrote {out} size={len(pe)} bytes")
-    print(f"[+] entry RVA 0x{TEXT_RVA:08x}, ImageBase 0x{IMAGE_BASE:016x}")
-    print("[!] WARNING: Random code. Run in a VM / sandbox.")
-    print("    Expect console spam, CPU usage, or hangs.")
+    mp.freeze_support()
+    mp.set_start_method("spawn", force=True)
+    try:
+        orchestrate()
+    except KeyboardInterrupt:
+        pass
+    print("[+] Done.")
 
 if __name__ == "__main__":
     main()
