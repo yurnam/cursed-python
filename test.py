@@ -1,229 +1,102 @@
-import random as сука
-import time as время
+import pefile
+import ctypes
+import os
+import random
+import multiprocessing
+
+# Define some ctypes types
+ctypes_types = [ctypes.c_int, ctypes.c_float, ctypes.c_double, ctypes.c_char_p]
 
 
-class курва(Exception):
-    def __ne__(уг, др):  # всё всегда истина, как и в оригинале
-        return True
+# Generate random ctypes type
+def random_ctypes_type():
+    return random.choice(ctypes_types)
 
-    def __eq__(уг, др):
-        return True
 
-    def нахуй(уг, *_, **__):
-        pass  # талисман-метод для ключа в словарях
+# Generate a random parameter for a given ctypes type
+def random_parameter(ctypes_type):
+    if ctypes_type == ctypes.c_int:
+        return random.randint(-9000, 9000)
+    elif ctypes_type == ctypes.c_float or ctypes_type == ctypes.c_double:
+        return random.uniform(-9000.0, 9000.0)
+    elif ctypes_type == ctypes.c_char_p:
+        return ctypes.create_string_buffer(bytes(''.join(random.choices('ABCDEFGHIJKLMNOP\\/!"`_-|><^°1234567890§$%&/()=?abcdefghijklmnopqrstuvwxyz', k=10)), 'utf-8'))
+    else:
+        return None
 
-    def __init__(я):
-        евал, ексек, опен, норд = eval, exec, open, ord
-        неть = "!="
-        а = ("nmli2japoom41a"
-             "tinj03lao,sm0j"
-             "i41-n.y4nu"
-             "4anjilltm"
-             "il0.rjsas."
-             "m9fiociikls2"
-             "4iemii3d40p4lo"
-             "m")
-        пенек, челюсти = 52, 34
 
-        # богохульная карта как в оригинале (часть ключей не используется — так и надо)
-        утр = {
-            а: норд,
-            пенек: а,
-            ord: int,
-            len: str,
-            1: int,
-            57: пенек,
-            39: челюсти,
-        }
+def list_exported_functions(dll_path):
+    try:
+        pe = pefile.PE(dll_path)
+        functions = []
+        for exp in pe.DIRECTORY_ENTRY_EXPORT.symbols:
+            function_address = hex(pe.OPTIONAL_HEADER.ImageBase + exp.address)
+            function_name = exp.name.decode('utf-8') if exp.name else None
+            functions.append((function_address, function_name))
+        return functions
+    except Exception as e:
+        print(f"Failed to list exported functions for {dll_path} with exception: {e}")
+        return []
 
-        # тот же обфускейшн-конструктор строки y, но на «я != я»
-        y = утр[пенек][
-            утр[
-                утр[
-                    утр[ord](утр[len](пенек)[я != я])
-                    / утр[ord](утр[len](пенек)[я != я])
-                ](утр[len](пенек)[я != я])
-                / утр[
-                    утр[ord](утр[len](пенек)[я != я])
-                    / утр[ord](утр[len](пенек)[я != я])
-                ](утр[len](пенек)[я != я])
-            ](
-                -(
-                    челюсти
-                    / утр[
-                        утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    ](утр[len](пенек)[я != я])
-                )
-            )
-        ]
-        y += (
-            утр[пенек][
-                утр[ord](
-                    (
-                        челюсти
-                        * утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](-(челюсти / утр[ord](утр[len](пенек)[я != я])))
-            ]
-            + утр[пенек][
-                утр[
-                    утр[ord](утр[len](пенек)[я != я])
-                    / утр[ord](утр[len](пенек)[я != я])
-                ](
-                    (
-                        челюсти
-                        - утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    )
-                )
-            ]
-        )
-        y += (
-            утр[пенек][
-                утр[ord](-(челюсти / утр[ord](утр[len](пенек)[я != я])))
-            ]
-            + утр[пенек][утр[ord]((челюсти - пенек + 5))]
-        )
-        y += (
-            утр[пенек][
-                утр[ord](
-                    -(
-                        челюсти
-                        + (
-                            утр[ord](утр[len](пенек)[я != я])
-                            + (
-                                утр[ord](утр[len](пенек)[я != я])
-                                + (
-                                    утр[ord](утр[len](пенек)[я != я])
-                                    / утр[ord](утр[len](пенек)[я != я])
-                                )
-                            )
-                        )
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](
-                    -(
-                        челюсти
-                        - утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](
-                    -(
-                        пенек
-                        / (
-                            утр[ord](утр[len](пенек)[я != я])
-                            * утр[ord](утр[len](пенек)[я != я])
-                        )
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](
-                    -(
-                        пенек
-                        - челюсти
-                        + (
-                            утр[ord](утр[len](пенек)[я != я])
-                            * утр[ord](утр[len](пенек)[я != я])
-                        )
-                    )
-                )
-            ]
-        )
-        y += (
-            утр[пенек][
-                утр[ord](
-                    челюсти
-                    + утр[ord](утр[len](пенек)[я != я])
-                    + (
-                        утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](
-                    -(
-                        челюсти
-                        - утр[ord](утр[len](пенек)[я != я])
-                        / утр[ord](утр[len](пенек)[я != я])
-                    )
-                )
-            ]
-            + утр[пенек][
-                утр[ord](-(челюсти / утр[ord](утр[len](пенек)[я != я])))
-            ]
-            + утр[пенек][
-                утр[ord](
-                    -(
-                        (
-                            челюсти
-                            - (
-                                утр[ord](утр[len](пенек)[я != я])
-                                * утр[ord](утр[len](пенек)[я != я])
-                            )
-                        )
-                        / (
-                            утр[ord](утр[len](пенек)[я != я])
-                            + (
-                                утр[ord](утр[len](пенек)[я != я])
-                                / утр[ord](утр[len](пенек)[я != я])
-                            )
-                        )
-                    )
-                )
-            ]
-        )
-        y += (
-            утр[пенек][-утр[ord]((утр[len](пенек)[1]))]
-            + утр[пенек][утр[ord](пенек - пенек)]
-            + утр[пенек][-утр[ord](утр[len](челюсти)[0])]
-            + утр[пенек][утр[ord](утр[len](челюсти)[0])]
-        )
-        y += (
-            утр[пенек][
-                утр[ord]((утр[len](челюсти)[0]))
-                - утр[ord]((утр[len](челюсти)[1]))
-            ]
-            + утр[пенек][утр[ord](утр[len](челюсти)[0])]
-            + утр[пенек][утр[ord](пенек - челюсти - 4)]
-        )
 
-        # «эксцепционистский» обмен: всё готовим, но исполняем уже снаружи
-        карта = {я.нахуй: евал, опен: str}
-        я.блядь = карта[я.нахуй](f"(3.061616997868383e-17-0.5j) {нать:=неть} (-4) ** -(-1/-2)")
-        я.код_первый = f"{y}(10 ** 6)"   # например print(10**6)
-        я.путь = __file__
-        я.выполнить = ексек
-        я.читать = опен
-        я.случай = сука.choice
+def dosomethingtodll(dll_path):
+    try:
+        dll = ctypes.CDLL(dll_path)
+        functions = list_exported_functions(dll_path)
+
+        for function_address, function_name in functions:
+            if function_name:  # Ensure the function has a name
+                try:
+                    func = getattr(dll, function_name)
+
+                    # Assign random argument types and create random arguments
+                    argtypes = [random_ctypes_type() for _ in range(random.randint(1, 5))]
+                    func.argtypes = argtypes
+                    func.restype = random_ctypes_type()
+
+                    # Generate random parameters for the function
+                    parameters = [random_parameter(argtype) for argtype in argtypes]
+
+                    try:
+                        result = func(*parameters)
+                        print(f"Function {function_name} called successfully with result: {result}")
+                    except Exception as e:
+                        print(f"Function {function_name} call failed with exception: {e}")
+
+                except AttributeError as e:
+                    print(f"Setting up function {function_name} failed with AttributeError: {e}")
+                except Exception as e:
+                    print(f"Setting up function {function_name} failed with exception: {e}")
+
+    except Exception as e:
+        print(f"Loading DLL {dll_path} failed with exception: {e}")
+
+
+def process_dll_file(dll_path):
+    try:
+        dosomethingtodll(dll_path)
+    except Exception as e:
+        print(f"Processing {dll_path} failed with exception: {e}")
+
+
+def main():
+    pool = multiprocessing.Pool()
+    for root, dirs, files in os.walk('c:\\'):
+        for file in files:
+            try:
+                if file.lower().endswith('.dll'):
+                    dll_path = os.path.join(root, file)
+                    print(f"Processing {dll_path}")
+                    pool.apply_async(process_dll_file, args=(dll_path,))
+            except Exception as e:
+                print(f"Failed to process {file} with exception: {e}")
+    try:
+        pool.close()
+        pool.join()
+    except Exception as e:
+        print(f"Failed to close pool with exception: {e}")
 
 
 if __name__ == "__main__":
-    while время:
-        try:
-            raise курва()
-        except курва as е:
-            # первый заход: выполняем сконструированную строку кода
-            try:
-                е.выполнить(е.код_первый)
-            except Exception:
-                pass
-            # второй заход: читаем и выполняем текущий файл (как в исходнике)
-            try:
-                with е.читать(е.путь, "r") as ф:
-                    е.выполнить(ф.read())
-            except Exception:
-                pass
-        except Exception:
-            pass
+        main()
+
