@@ -23,10 +23,10 @@ RNG_SEED             = None                    # set to an int for reproducible 
 # --- FAST SCANNING SETTINGS ---
 RECURSIVE            = True                    # False = only top-level of ROOT_DIR (fastest)
 TARGET_DLLS          = 500                  # stop scanning once we have this many candidates
-SCAN_TIME_BUDGET_SEC = 5.0                   # increased for more scanning
+SCAN_TIME_BUDGET_SEC = 15.0                   # increased for more scanning
 MAX_EXPORTS_PER_DLL  = 5000                    # at most N names per DLL (enough for chaos)
 EXCLUDE_DIR_NAMES    = set()
-MAX_SCAN_DEPTH       = 3                       # max subdirectory depth for DLL scanning
+MAX_SCAN_DEPTH       = 6                       # max subdirectory depth for DLL scanning
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
 # ============================================================================
