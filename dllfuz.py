@@ -37,7 +37,7 @@ RNG_SEED = None                      # set to an int for reproducible chaos, or 
 # --- TIMING CONTROLS ---
 SHUFFLE_INTERVAL_SEC = 12             # shuffle DLL/function array every 12 seconds
 RANDOMIZE_INTERVAL_SEC = 13           # re-randomize parameter data every 13 seconds
-EXECUTION_BATCH_SIZE = 10             # execute functions in parallel
+EXECUTION_BATCH_SIZE = 10             # preferred batch size (but not required)
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
@@ -512,13 +512,22 @@ def shuffle_dll_function_array():
 
 def prepare_parameter_sets(files_list):
     """Prepare parameter sets for function execution"""
-    global current_parameter_sets, last_randomize_time
+    global current_parameter_sets, last_randomize_time, dll_function_array
     current_time = time.time()
     
     if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC:
         current_parameter_sets = []
         
-        for i in range(EXECUTION_BATCH_SIZE):
+        # Determine how many parameter sets to prepare based on available functions and workers
+        num_functions = len(dll_function_array)
+        if num_functions == 0:
+            # No functions available, still prepare some sets for when functions become available
+            num_sets = WORKERS
+        else:
+            # Prepare enough sets for the available functions, but at least WORKERS sets
+            num_sets = max(num_functions, WORKERS)
+        
+        for i in range(num_sets):
             # Generate parameter set with random number of arguments
             num_args = random.randint(0, MAX_ARGS_PER_CALL)
             param_set = []
@@ -534,7 +543,7 @@ def prepare_parameter_sets(files_list):
             current_parameter_sets.append(param_set)
         
         last_randomize_time = current_time
-        print(f"[RANDOMIZE] Prepared {len(current_parameter_sets)} parameter sets")
+        print(f"[RANDOMIZE] Prepared {len(current_parameter_sets)} parameter sets for {num_functions} functions")
 
 def execute_single_function(dll_path, func_name, param_set, files_list):
     """Execute a single DLL function with prepared parameters"""
@@ -572,20 +581,41 @@ def parallel_function_executor(files_list):
     """Execute DLL functions in parallel with timeout"""
     global dll_function_array, current_parameter_sets
     
-    if len(dll_function_array) < EXECUTION_BATCH_SIZE:
-        print("[ERROR] Not enough functions enumerated for batch execution")
+    # Check if we have any functions to execute
+    if len(dll_function_array) == 0:
+        print("[WARNING] No functions enumerated - skipping execution cycle")
         return
     
-    if len(current_parameter_sets) < EXECUTION_BATCH_SIZE:
-        print("[ERROR] Not enough parameter sets prepared")
+    if len(current_parameter_sets) == 0:
+        print("[WARNING] No parameter sets prepared - skipping execution cycle")
         return
     
-    # Select functions from the array
-    functions_to_execute = dll_function_array[:EXECUTION_BATCH_SIZE]
+    # Determine how many functions to execute this cycle
+    # Use the minimum of available functions, available parameter sets, and WORKERS
+    num_functions = len(dll_function_array)
+    num_param_sets = len(current_parameter_sets)
+    max_concurrent = min(WORKERS, num_functions, num_param_sets)
+    
+    # If we have more functions than we can execute concurrently, select a random subset
+    if num_functions > max_concurrent:
+        # Randomly select functions to execute this cycle
+        selected_indices = random.sample(range(num_functions), max_concurrent)
+        functions_to_execute = [dll_function_array[i] for i in selected_indices]
+    else:
+        # Use all available functions
+        functions_to_execute = dll_function_array[:max_concurrent]
+    
+    # Select parameter sets (reuse if necessary)
+    param_sets_to_use = []
+    for i in range(len(functions_to_execute)):
+        param_index = i % len(current_parameter_sets)  # Cycle through available parameter sets
+        param_sets_to_use.append(current_parameter_sets[param_index])
+    
+    print(f"[EXEC] Executing {len(functions_to_execute)} functions with {WORKERS} max workers")
     
     # Create processes for parallel execution
     processes = []
-    for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, current_parameter_sets)):
+    for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, param_sets_to_use)):
         try:
             proc = mp.Process(
                 target=execute_single_function,
