@@ -10,24 +10,23 @@ import mmap
 import regi
 import dolboyob
 # ==== HARD-CODED CONFIG (your values) ========================================
-ROOT_DIR             = r"C:\Windows\System32"  # Scan here for x64 DLLs with many exports.
-FILES_ROOT_DIR       = r"C:\\"                  # Scan entire drive for maximum DLLs.
-WORKERS              = 100                     # parallel child processes (start with this, but grow unbounded)
+ROOT_DIR             = r"C:\Windows"   # Scan Windows dir for DLLs.
+WORKERS              = 100                     # parallel child processes (maintain this number)
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 CALLS_PER_CHILD      = 100                   # but made infinite in child
 MAX_ARGS_PER_CALL    = 255                     # 0..N args
-MAX_RANDOM_BUF_BYTES = 1048                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 360                    # 1 hour, but timeout removed for max chaos
+MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
+CHILD_TIMEOUT_SEC    = 360                    # 1 hour, kill after this
 SCAN_LIMIT_DLLS      = 1000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FAST SCANNING SETTINGS ---
 RECURSIVE            = True                    # False = only top-level of ROOT_DIR (fastest)
 TARGET_DLLS          = 500                  # stop scanning once we have this many candidates
-TARGET_FILES         = 10000                 # stop scanning once we have this many file candidates
-SCAN_TIME_BUDGET_SEC = 30.0                   # increased for more scanning
+SCAN_TIME_BUDGET_SEC = 5.0                   # increased for more scanning
 MAX_EXPORTS_PER_DLL  = 5000                    # at most N names per DLL (enough for chaos)
 EXCLUDE_DIR_NAMES    = set()
+MAX_SCAN_DEPTH       = 3                       # max subdirectory depth for DLL scanning
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
 # ============================================================================
@@ -188,6 +187,12 @@ def scan_x64_dlls_fast(root):
         return picked
 
     for dirpath, dirnames, filenames in os.walk(root):
+        # Check depth limit
+        depth = dirpath[len(root):].count(os.sep)
+        if depth >= MAX_SCAN_DEPTH:
+            dirnames.clear()  # Don't go deeper
+            continue
+            
         dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
         random.shuffle(filenames)
         for fn in filenames:
@@ -283,352 +288,95 @@ def get_random_file_bytes(sz, files_list):
         return b""
 
 def child_worker(path_str, func_name, iterations, max_args, max_buf, seed, files_list):
-    """Enhanced child worker with multi-platform support and dolboyob integration"""
-    print(f"[CHILD WORKER] Starting worker process for function: {func_name} from {path_str}")
     random.seed(seed)
-    print(f"[SEED] Initialized with seed: {hex(seed)}")
-    
     path = Path(path_str)
-    library = None
-    function = None
-    buffers = []
-    call_count = 0
-    
     if PREPEND_DLL_DIR_TO_PATH:
         os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
-        print(f"[PATH SETUP] Configured PATH for DLL loading")
-    
-    # Enhanced DLL loading with multi-platform support
     try:
-        print(f"[DLL LOADING] Attempting to load library: {path}")
-        
-        # Try different loading methods for maximum compatibility
-        try:
-            if os.name == "nt":
-                library = ctypes.WinDLL(str(path))
-            else:
-                # For non-Windows systems, try CDLL
-                library = ctypes.CDLL(str(path))
-        except Exception as load_error:
-            print(f"[DLL FALLBACK] Primary loading failed: {load_error}")
-            # Try alternative loading method
-            try:
-                library = ctypes.cdll.LoadLibrary(str(path))
-            except Exception as load_error2:
-                print(f"[DLL SYSTEM FALLBACK] Secondary loading failed: {load_error2}")
-                # Final fallback - try to load any available system library
-                system_libs = ["libc.so.6", "libm.so.6", "libpthread.so.0", "kernel32.dll", "user32.dll", "ntdll.dll"]
-                for sys_lib in system_libs:
-                    try:
-                        print(f"[SYSTEM LIBRARY] Trying to load: {sys_lib}")
-                        if os.name == "nt":
-                            library = ctypes.WinDLL(sys_lib)
-                        else:
-                            library = ctypes.CDLL(sys_lib)
-                        print(f"[SYSTEM SUCCESS] Loaded system library: {sys_lib}")
-                        break
-                    except:
-                        continue
-                else:
-                    # If everything fails, raise the original error
-                    raise load_error
-        
-        print(f"[DLL SUCCESS] Successfully loaded: {path}")
-                
-    except Exception as dll_error:
-        print(f"[DLL ERROR] Library loading error: {dll_error}")
-        # Reduced chance for fake library (1% instead of 10%)
-        if random.random() < 0.01:
-            print(f"[FAKE DLL] Creating fake library for testing purposes")
-            class FakeDLL:
-                def __getattr__(self, name):
-                    def fake_func(*args):
-                        print(f"[FAKE CALL] Fake function call {name} with {len(args)} arguments")
-                        return random.randint(0, 0xFFFFFFFF)
-                    return fake_func
-            library = FakeDLL()
-        else:
-            print(f"[EXIT] Could not load DLL, exiting worker")
-            return
-    
-    # Enhanced function retrieval
+        lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
+    except Exception:
+        return
     try:
-        print(f"[FUNCTION SEARCH] Looking for function: {func_name}")
-        function = getattr(library, func_name)
-        print(f"[FUNCTION FOUND] Successfully obtained function {func_name}")
-    except Exception as func_error:
-        print(f"[FUNCTION ERROR] Function {func_name} not found: {func_error}")
-        # Try alternative function names (increased probability from 5% to 20%)
-        if random.random() < 0.2:
-            chaos_names = ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess", 
-                          "malloc", "free", "printf", "strlen", "strcmp", "memcpy", "sin", "cos", "sqrt"]
-            chaos_name = random.choice(chaos_names)
-            print(f"[ALTERNATIVE FUNCTION] Trying alternative function: {chaos_name}")
-            try:
-                function = getattr(library, chaos_name)
-                print(f"[ALTERNATIVE SUCCESS] Got alternative function: {chaos_name}")
-                func_name = chaos_name  # Update function name for logging
-            except:
-                print(f"[ALTERNATIVE FAILED] Alternative function also failed")
-                # Create a fake function to continue execution
-                class FakeFunction:
-                    def __call__(self, *args):
-                        print(f"[FAKE CALL] Fake function call with {len(args)} arguments")
-                        return random.randint(0, 0xFFFFFFFF)
-                function = FakeFunction()
-                func_name = f"FAKE_{func_name}"
-        else:
-            print(f"[FUNCTION FALLBACK] Function not found, creating fallback")
-            class FakeFunction:
-                def __call__(self, *args):
-                    print(f"[FAKE CALL] Fallback function call {func_name} with {len(args)} arguments")
-                    return random.randint(0, 0xFFFFFFFF)
-            function = FakeFunction()
-            func_name = f"FAKE_{func_name}"
-    
-    # Enhanced function configuration
-    chaos_restypes = [ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None, 
-                     ctypes.c_float, ctypes.c_uint32, ctypes.c_int64, ctypes.c_char_p]
-    if hasattr(function, 'restype'):
-        selected_type = random.choice(chaos_restypes)
-        function.restype = selected_type
-        print(f"[RESTYPE] Set random return type: {selected_type}")
-    
-    # Enhanced buffer creation
-    buffer_count = random.randint(32, 128)
-    print(f"[BUFFER CREATION] Creating {buffer_count} buffers for function calls")
-    for i in range(buffer_count):
+        fn = getattr(lib, func_name)
+    except Exception:
+        return
+    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])  # random restype for more chaos
+
+    bufs = []
+    for _ in range(64):  # more buffers
         sz = random.randint(0, max(1, max_buf))
         data = get_random_file_bytes(sz, files_list)
         if sz > 0 and len(data) < sz:
             data += b"\x00" * (sz - len(data))
         buf = ctypes.create_string_buffer(data)
-        buffers.append(buf)
+        bufs.append(buf)
 
-    # Enhanced execution loop with comprehensive argument generation
-    print(f"[EXECUTION LOOP] Starting enhanced infinite execution loop for function calls")
-    calls_made = 0
     while True:  # infinite loop for maximum calls
+        nargs = random.randint(0, max_args)
+        args = []
+        for __ in range(nargs):
+            kind = random.randint(0, 12)  # Extended with dolboyob types
+            if kind == 0:
+                args.append(ctypes.c_uint64(random.getrandbits(64)))
+            elif kind == 1:
+                args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
+            elif kind == 2:
+                args.append(ctypes.c_void_p(0))  # NULL
+            elif kind == 3:
+                b = random.choice(bufs)
+                args.append(ctypes.cast(b, ctypes.c_void_p))
+            elif kind == 4:
+                b = random.choice(bufs)
+                pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
+                args.append(ctypes.cast(pptr, ctypes.c_void_p))
+            elif kind == 5:
+                args.append(ctypes.c_double(random.uniform(-1e12, 1e12)))
+            elif kind == 6:
+                sz = random.randint(0, 4096)
+                s = get_random_file_bytes(sz, files_list)
+                args.append(ctypes.c_char_p(s))
+            elif kind == 7:
+                s = ''.join(chr(random.randint(0, 0x10FFFF)) for _ in range(random.randint(0, 1024)))
+                args.append(ctypes.c_wchar_p(s))
+            elif kind == 8:
+                args.append(ctypes.c_int(random.getrandbits(32) - (1 << 31)))
+            elif kind == 9:
+                args.append(ctypes.c_void_p(random.getrandbits(64)))  # random pointer
+            elif kind == 10:
+                # Simple dolboyob integration - string as char pointer
+                try:
+                    dolboyob_instance = dolboyob.долбоёб()
+                    dolboyob_string = dolboyob_instance.хуй(None)
+                    if dolboyob_string and isinstance(dolboyob_string, str):
+                        dolboyob_bytes = dolboyob_string.encode('utf-8', errors='ignore')
+                        args.append(ctypes.c_char_p(dolboyob_bytes))
+                    else:
+                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
+                except:
+                    args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
+            elif kind == 11:
+                # Simple dolboyob integration - data as buffer
+                try:
+                    dolboyob_instance = dolboyob.долбоёб()
+                    dolboyob_data = dolboyob_instance.хуй(None)
+                    if dolboyob_data:
+                        if isinstance(dolboyob_data, str):
+                            raw_bytes = dolboyob_data.encode('utf-8', errors='ignore')
+                        else:
+                            raw_bytes = bytes(dolboyob_data)
+                        dolboyob_buf = ctypes.create_string_buffer(raw_bytes)
+                        args.append(ctypes.cast(dolboyob_buf, ctypes.c_void_p))
+                    else:
+                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
+                except:
+                    args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
+            else:
+                # Random value fallback
+                args.append(ctypes.c_void_p(random.getrandbits(64)))
         try:
-            nargs = random.randint(0, max_args)
-            args = []
-            
-            # Log progress every 1000 calls
-            if calls_made % 1000 == 0 and calls_made > 0:
-                print(f"[PROGRESS] Made {calls_made} function calls to {func_name}")
-            
-            for __ in range(nargs):
-                # Enhanced argument generation with dolboyob integration (23 types)
-                kind = random.randint(0, 22)
-                
-                if kind == 0:
-                    args.append(ctypes.c_uint64(random.getrandbits(64)))
-                elif kind == 1:
-                    args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
-                elif kind == 2:
-                    args.append(ctypes.c_void_p(0))  # NULL
-                elif kind == 3:
-                    b = random.choice(buffers)
-                    args.append(ctypes.cast(b, ctypes.c_void_p))
-                elif kind == 4:
-                    b = random.choice(buffers)
-                    pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
-                    args.append(ctypes.cast(pptr, ctypes.c_void_p))
-                elif kind == 5:
-                    args.append(ctypes.c_double(random.uniform(-1e12, 1e12)))
-                elif kind == 6:
-                    sz = random.randint(0, 4096)
-                    s = get_random_file_bytes(sz, files_list)
-                    args.append(ctypes.c_char_p(s))
-                elif kind == 7:
-                    s = ''.join(chr(random.randint(0, 0x10FFFF)) for _ in range(random.randint(0, 1024)))
-                    try:
-                        args.append(ctypes.c_wchar_p(s))
-                    except:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                elif kind == 8:
-                    args.append(ctypes.c_int(random.getrandbits(32) - (1 << 31)))
-                elif kind == 9:
-                    args.append(ctypes.c_void_p(random.getrandbits(64)))  # random pointer
-                elif kind == 10:
-                    # Function pointers
-                    args.append(ctypes.c_void_p(random.randint(0x100000, 0x7FFFFFFF)))
-                elif kind == 11:
-                    # Handle values
-                    args.append(ctypes.c_void_p(random.choice([0, -1, 0xFFFFFFFF, random.randint(1, 0x1000)])))
-                elif kind == 12:
-                    # Float values
-                    args.append(ctypes.c_float(random.uniform(-1e6, 1e6)))
-                elif kind == 13:
-                    # Boolean-like values  
-                    args.append(ctypes.c_uint32(random.choice([0, 1, 0xFFFFFFFF])))
-                elif kind == 14:
-                    # Array of random bytes
-                    array_size = random.randint(1, 100)
-                    ArrayType = ctypes.c_uint8 * array_size
-                    chaos_array = ArrayType(*[random.randint(0, 255) for _ in range(array_size)])
-                    args.append(ctypes.cast(chaos_array, ctypes.c_void_p))
-                elif kind == 15:
-                    # Structures with random data
-                    class TestStruct(ctypes.Structure):
-                        _fields_ = [("a", ctypes.c_uint32), ("b", ctypes.c_uint32), ("c", ctypes.c_void_p)]
-                    test_struct = TestStruct(random.randint(0, 0xFFFFFFFF), 
-                                           random.randint(0, 0xFFFFFFFF), 
-                                           random.randint(0, 0xFFFFFFFF))
-                    args.append(ctypes.pointer(test_struct))
-                elif kind == 16:
-                    # Unicode strings
-                    unicode_string = ''.join(chr(random.randint(0x100, 0x2000)) for _ in range(random.randint(1, 50)))
-                    try:
-                        args.append(ctypes.c_wchar_p(unicode_string))
-                    except:
-                        args.append(ctypes.c_void_p(0))
-                elif kind == 17:
-                    # Negative pointers
-                    args.append(ctypes.c_void_p(random.randint(0x80000000, 0xFFFFFFFF)))
-                elif kind == 18:
-                    # Special system values
-                    special_values = [0x7FFE0000, 0x80000000, 0xC0000000, 0xFFFF0000]
-                    args.append(ctypes.c_void_p(random.choice(special_values)))
-                elif kind == 19:
-                    # DOLBOYOB string data as char pointer
-                    try:
-                        dolboyob_instance = dolboyob.долбоёб()
-                        dolboyob_string = dolboyob_instance.хуй(None)
-                        if dolboyob_string and isinstance(dolboyob_string, str):
-                            dolboyob_bytes = dolboyob_string.encode('utf-8', errors='ignore')
-                            args.append(ctypes.c_char_p(dolboyob_bytes))
-                            print(f"[DOLBOYOB ARG] Using dolboyob string as argument!")
-                        else:
-                            args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                    except:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                elif kind == 20:
-                    # DOLBOYOB data as raw buffer
-                    try:
-                        dolboyob_instance = dolboyob.долбоёб()
-                        dolboyob_data = dolboyob_instance.хуй(None)
-                        if dolboyob_data:
-                            if isinstance(dolboyob_data, str):
-                                raw_bytes = dolboyob_data.encode('utf-8', errors='ignore')
-                            else:
-                                raw_bytes = bytes(dolboyob_data)
-                            
-                            # Create buffer and use as pointer
-                            dolboyob_buf = ctypes.create_string_buffer(raw_bytes)
-                            args.append(ctypes.cast(dolboyob_buf, ctypes.c_void_p))
-                            print(f"[DOLBOYOB BUFFER] Using dolboyob buffer as argument!")
-                        else:
-                            args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                    except:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                elif kind == 21:
-                    # DOLBOYOB data as integer (hash of data)
-                    try:
-                        dolboyob_instance = dolboyob.долбоёб()
-                        dolboyob_data = dolboyob_instance.хуй(None)
-                        if dolboyob_data:
-                            # Convert data to integer hash
-                            data_hash = hash(str(dolboyob_data)) & 0xFFFFFFFF
-                            args.append(ctypes.c_uint32(data_hash))
-                            print(f"[DOLBOYOB HASH] Using dolboyob data hash: {hex(data_hash)}")
-                        else:
-                            args.append(ctypes.c_uint32(random.randint(0, 0xFFFFFFFF)))
-                    except:
-                        args.append(ctypes.c_uint32(random.randint(0, 0xFFFFFFFF)))
-                elif kind == 22:
-                    # DOLBOYOB data as wide char string
-                    try:
-                        dolboyob_instance = dolboyob.долбоёб()
-                        dolboyob_data = dolboyob_instance.хуй(None)
-                        if dolboyob_data and isinstance(dolboyob_data, str):
-                            # Use dolboyob string as wide char
-                            args.append(ctypes.c_wchar_p(dolboyob_data))
-                            print(f"[DOLBOYOB WCHAR] Using dolboyob string as wide char!")
-                        else:
-                            args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                    except:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                else:
-                    # Completely random value
-                    args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFFFFFFFFFF)))
-            
-            # Enhanced function call with robust error handling
-            call_successful = False
-            try:
-                print(f"[FUNCTION CALL] Calling {func_name} with {len(args)} arguments")
-                result = function(*args)
-                print(f"[CALL RESULT] Function returned: {result}")
-                call_successful = True
-                call_count += 1
-                calls_made += 1
-                
-                # Log every successful call for verification
-                if call_count % 100 == 0:
-                    print(f"[PROGRESS FREQUENT] Successfully executed {call_count} calls to function {func_name}!")
-                    
-            except Exception as call_error:
-                print(f"[CALL ERROR] Error calling function: {call_error}")
-                
-                # Try alternative calls to ensure execution
-                alternative_calls_tried = 0
-                max_alternatives = 5
-                
-                while not call_successful and alternative_calls_tried < max_alternatives:
-                    alternative_calls_tried += 1
-                    try:
-                        print(f"[ALTERNATIVE CALL {alternative_calls_tried}] Trying alternative call method")
-                        
-                        # Try different argument combinations
-                        if alternative_calls_tried == 1:
-                            # Try with no arguments
-                            result = function()
-                            print(f"[ALT RESULT] No args: {result}")
-                        elif alternative_calls_tried == 2:
-                            # Try with single NULL pointer
-                            result = function(ctypes.c_void_p(0))
-                            print(f"[ALT RESULT] With NULL: {result}")
-                        elif alternative_calls_tried == 3:
-                            # Try with single integer
-                            result = function(ctypes.c_int(random.randint(0, 100)))
-                            print(f"[ALT RESULT] With int: {result}")
-                        elif alternative_calls_tried == 4:
-                            # Try with dolboyob data
-                            try:
-                                dolboyob_instance = dolboyob.долбоёб()
-                                dolboyob_data = dolboyob_instance.хуй(None)
-                                if dolboyob_data:
-                                    result = function(ctypes.c_char_p(dolboyob_data.encode('utf-8', errors='ignore')))
-                                    print(f"[ALT RESULT] With dolboyob: {result}")
-                                else:
-                                    result = function(ctypes.c_int(42))
-                                    print(f"[ALT RESULT] With 42: {result}")
-                            except:
-                                result = function(ctypes.c_int(42))
-                                print(f"[ALT RESULT] With 42 (fallback): {result}")
-                        else:
-                            # Final attempt with random int
-                            result = function(ctypes.c_int(random.randint(-1000, 1000)))
-                            print(f"[ALT RESULT] Final attempt: {result}")
-                            
-                        call_successful = True
-                        call_count += 1
-                        calls_made += 1
-                        print(f"[ALTERNATIVE SUCCESS] Alternative call #{alternative_calls_tried} successful!")
-                        
-                    except Exception as alt_error:
-                        print(f"[ALTERNATIVE ERROR {alternative_calls_tried}] {alt_error}")
-                        continue
-                
-                if not call_successful:
-                    print(f"[ALL ALTERNATIVES FAILED] Could not execute function with any method!")
-                    # Still count as an attempt
-                    calls_made += 1
-                    
-        except Exception as general_error:
-            print(f"[GENERAL ERROR] General execution error: {general_error}")
-            # Continue execution anyway
-            calls_made += 1
+            _ = fn(*args)
+        except Exception:
+            pass  # child can crash/hang; orchestrator will replace it
 
 # --- orchestration ---
 def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
@@ -644,92 +392,23 @@ def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
     return proc, path, func, time.time()
 
 def orchestrate():
-    """Enhanced orchestration with multi-platform support"""
-    print(f"[ORCHESTRATION] Starting enhanced orchestration!")
-    
-    # Remove OS restrictions to allow execution on any platform
-    print(f"[OS DETECTION] Operating system: {os.name}")
-    print(f"[ARCH DETECTION] Pointer architecture: {ctypes.sizeof(ctypes.c_void_p) * 8}-bit")
-    
-    # Continue regardless of OS for maximum compatibility
     if os.name != "nt":
-        print("[WARNING] Not Windows, but will attempt execution anyway!", file=sys.stderr)
-        # Don't exit, continue with execution
-    
+        print("[-] Windows-only.", file=sys.stderr); sys.exit(2)
     if ctypes.sizeof(ctypes.c_void_p) != 8:
-        print("[WARNING] Not 64-bit, but will try anyway!", file=sys.stderr)
-        # Don't exit, continue with execution
-        
+        print("[-] Use 64-bit Python to call x64 DLLs.", file=sys.stderr); sys.exit(2)
     if RNG_SEED is not None:
-        print(f"[SEED] Using fixed seed: {RNG_SEED}")
         random.seed(RNG_SEED)
 
-    print(f"[DLL SCANNING] Scanning for DLLs in {ROOT_DIR}")
     dlls = scan_x64_dlls_fast(ROOT_DIR)
-    print(f"[SCAN RESULT] Found {len(dlls)} DLLs for testing!")
-    
     if not dlls:
-        print("[-] No suitable DLLs found. Adding system libraries!")
-        
-        # Add system libraries with known functions
-        system_libraries = []
-        if os.name == "nt":
-            # Windows system libraries
-            system_libs = [
-                ("kernel32.dll", ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess", "GetCurrentProcess", "GetCurrentThread"]),
-                ("user32.dll", ["MessageBoxA", "FindWindowA", "GetWindowTextA", "SetWindowTextA", "ShowWindow"]),
-                ("ntdll.dll", ["NtQuerySystemInformation", "RtlGetVersion", "NtCreateFile", "NtClose"]),
-                ("msvcrt.dll", ["malloc", "free", "printf", "strlen", "strcmp", "memcpy"]),
-                ("shell32.dll", ["ShellExecuteA", "SHGetFolderPathA", "ExtractIconA"])
-            ]
-        else:
-            # Unix-like system libraries
-            system_libs = [
-                ("libc.so.6", ["malloc", "free", "printf", "strlen", "strcmp", "memcpy", "exit", "getpid"]),
-                ("libm.so.6", ["sin", "cos", "tan", "sqrt", "pow", "log", "exp"]),
-                ("libpthread.so.0", ["pthread_create", "pthread_join", "pthread_exit", "pthread_mutex_init"]),
-                ("libdl.so.2", ["dlopen", "dlsym", "dlclose", "dlerror"])
-            ]
-        
-        print(f"[SYSTEM LIBRARIES] Adding {len(system_libs)} system libraries!")
-        for lib_path, functions in system_libs:
-            try:
-                # Test if library can be loaded
-                if os.name == "nt":
-                    test_lib = ctypes.WinDLL(lib_path)
-                else:
-                    test_lib = ctypes.CDLL(lib_path)
-                
-                # Verify at least one function exists
-                verified_functions = []
-                for func in functions:
-                    try:
-                        test_func = getattr(test_lib, func)
-                        verified_functions.append(func)
-                    except:
-                        continue
-                
-                if verified_functions:
-                    full_path = lib_path if '/' in lib_path or '\\' in lib_path else f"/lib/{lib_path}"
-                    system_libraries.append((full_path, verified_functions))
-                    print(f"[SYSTEM ADDED] {lib_path} with {len(verified_functions)} functions: {verified_functions[:3]}...")
-                    
-            except Exception as lib_error:
-                print(f"[SYSTEM FAILED] Could not add {lib_path}: {lib_error}")
-                continue
-        
-        dlls.extend(system_libraries)
-        print(f"[SYSTEM SUCCESS] Added {len(system_libraries)} system libraries!")
-        
-        if not dlls:
-            print("[-] No libraries available at all!")
-            sys.exit(1)
-    
-    print(f"[FINAL DLL COUNT] Total available libraries: {len(dlls)}")
+        print("[-] No suitable DLLs found."); sys.exit(1)
 
-    print(f"[FILE SCANNING] Scanning for files in {FILES_ROOT_DIR}")
-    files = scan_random_files(FILES_ROOT_DIR)
-    print(f"[FILES FOUND] Got {len(files)} files for data generation!")
+    # Simplified files scanning - remove FILES_ROOT_DIR dependency
+    files = []
+    try:
+        files = scan_random_files(ROOT_DIR)  # Use ROOT_DIR instead
+    except:
+        pass
     if not files:
         print("[!] No files found for random data; using empty buffers.")
 
@@ -755,12 +434,6 @@ def orchestrate():
                 procs.append((p, path, fn, started))
             except Exception:
                 pass
-
-    # cleanup
-    for (p, _, _, _) in procs:
-        if p.is_alive():
-            try: p.terminate()
-            except Exception: pass
 
 def main():
     mp.freeze_support()
