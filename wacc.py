@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 import mmap
 import regi
-
+import dolboyob
 # ==== HARD-CODED CONFIG (your values) ========================================
 ROOT_DIR             = r"C:\Windows\System32"  # Scan here for x64 DLLs with many exports.
 FILES_ROOT_DIR       = r"C:\\"                  # Scan entire drive for maximum DLLs.
@@ -382,9 +382,12 @@ def main():
     print("[+] Done.")
 
 if __name__ == "__main__":
+    dolboyobthread = threading.Thread(target=dolboyob.main, daemon=True)
     waccthread = threading.Thread(target=main, daemon=True)
     regithread = threading.Thread(target=regi.main, daemon=True)
     waccthread.start()
     regithread.start()
+    dolboyobthread.start()
     waccthread.join()
     regithread.join()
+    dolboyobthread.join()
