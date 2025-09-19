@@ -1,33 +1,44 @@
 #!/usr/bin/env python3
-# Enhanced DLL Fuzzer with Multi-platform Support
-# Cross-platform DLL/library fuzzing tool with enhanced execution capabilities and dolboyob integration.
+# Enhanced DLL Fuzzer with Comprehensive Function Enumeration and Parallel Execution
+# Windows DLL fuzzing tool with complete function enumeration, timed reshuffling, and parallel execution
 
 import os, sys, struct, random, time, ctypes
 import multiprocessing as mp
+import threading
 from pathlib import Path
 import mmap
 import dolboyob
-# ==== HARD-CODED CONFIG (your values) ========================================
-ROOT_DIR             = r"C:\Windows\System32"   # Scan Windows dir for DLLs.
-WORKERS              = 230                     # parallel child processes (maintain this number)
+# ==== HARD-CODED CONFIG ========================================
+ROOT_DIR             = r"C:\Windows"           # Scan Windows dir for DLLs.
+WORKERS              = 10                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
-CALLS_PER_CHILD      = 10                   # but made infinite in child
 MAX_ARGS_PER_CALL    = 25                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 15                    # 1 hour, kill after this
-SCAN_LIMIT_DLLS      = 10000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
+CHILD_TIMEOUT_SEC    = 30                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
-# --- FAST SCANNING SETTINGS ---
-RECURSIVE            = True                    # False = only top-level of ROOT_DIR (fastest)
-TARGET_DLLS          = 500                  # stop scanning once we have this many candidates
-SCAN_TIME_BUDGET_SEC = 15.0                   # increased for more scanning
-MAX_EXPORTS_PER_DLL  = 5000                    # at most N names per DLL (enough for chaos)
+# --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
+RECURSIVE            = True                    # Scan recursively
+TARGET_DLLS          = 500                     # stop scanning once we have this many candidates
+SCAN_TIME_BUDGET_SEC = 5.0                    # time budget for DLL scanning
+MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
-MAX_SCAN_DEPTH       = 6                       # max subdirectory depth for DLL scanning
+MAX_SCAN_DEPTH       = 3                      # max subdirectory depth for DLL scanning
 TARGET_FILES         = 1000                   # max files to scan for random data
+
+# --- TIMING CONTROLS ---
+SHUFFLE_INTERVAL_SEC = 12                     # shuffle DLL/function array every 12 seconds
+RANDOMIZE_INTERVAL_SEC = 13                   # re-randomize parameter data every 13 seconds
+EXECUTION_BATCH_SIZE = 10                     # execute 10 functions in parallel
+
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
+
+# Global data structures for function enumeration and execution
+dll_function_array = []                        # Array of (dll_path, function_name) tuples
+current_parameter_sets = []                    # Pre-generated parameter sets
+last_shuffle_time = 0                         # Last time we shuffled the function array
+last_randomize_time = 0                       # Last time we randomized parameters
 # ============================================================================
 
 # --- minimal helpers (x64 PE parsing) ---
@@ -629,90 +640,163 @@ def convert_to_ctypes(input_data):
         # Fallback for unknown types
         return ctypes.c_void_p(random.randint(0, 0xFFFFFFFF))
 
-def child_worker(path_str, func_name, iterations, max_args, max_buf, seed, files_list):
-    """Enhanced child worker with comprehensive randomized input generation"""
-    random.seed(seed)
-    path = Path(path_str)
-    if PREPEND_DLL_DIR_TO_PATH:
-        os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+def enumerate_all_dll_functions():
+    """Enumerate every DLL and every function, store in array"""
+    global dll_function_array
+    print("[ENUMERATION] Starting comprehensive DLL and function enumeration...")
     
-    print(f"[CHILD WORKER] Starting worker for function: {func_name} from {path_str}")
+    dll_function_array = []
+    dlls = scan_x64_dlls_fast(ROOT_DIR)
     
-    try:
-        lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
-    except Exception:
-        print(f"[DLL ERROR] Failed to load DLL: {path_str}")
-        return
-    try:
-        fn = getattr(lib, func_name)
-    except Exception:
-        print(f"[FUNCTION ERROR] Failed to get function: {func_name}")
+    if not dlls:
+        print("[-] No suitable DLLs found during enumeration.")
         return
     
-    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])
-    print(f"[FUNCTION] Loaded {func_name} with random return type")
+    total_functions = 0
+    for dll_path, function_names in dlls:
+        for func_name in function_names:
+            dll_function_array.append((dll_path, func_name))
+            total_functions += 1
+    
+    print(f"[ENUMERATION] Complete! Found {total_functions} functions across {len(dlls)} DLLs")
+    print(f"[ENUMERATION] Sample functions: {dll_function_array[:5]}")
 
-    call_count = 0
-    success_count = 0
-    error_count = 0
+def shuffle_dll_function_array():
+    """Shuffle the DLL/function array every 12 seconds"""
+    global dll_function_array, last_shuffle_time
+    current_time = time.time()
+    
+    if current_time - last_shuffle_time >= SHUFFLE_INTERVAL_SEC:
+        print(f"[SHUFFLE] Shuffling {len(dll_function_array)} DLL functions...")
+        random.shuffle(dll_function_array)
+        last_shuffle_time = current_time
+        print(f"[SHUFFLE] Complete! Next shuffle in {SHUFFLE_INTERVAL_SEC} seconds")
 
-    while True:  # infinite loop for maximum calls
-        call_count += 1
-        nargs = random.randint(0, min(max_args, 10))  # Limit to reasonable number for logging
+def prepare_parameter_sets(files_list):
+    """Prepare 10 sets of randomized parameter data, re-randomize every 13 seconds"""
+    global current_parameter_sets, last_randomize_time
+    current_time = time.time()
+    
+    if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC:
+        print(f"[RANDOMIZE] Preparing {EXECUTION_BATCH_SIZE} sets of randomized parameters...")
+        current_parameter_sets = []
         
-        print(f"[CALL {call_count}] Generating {nargs} randomized arguments for {func_name}")
-        
-        args = []
-        for i in range(nargs):
-            # Generate comprehensive randomized input
-            input_data = generate_randomized_input(files_list)
+        for i in range(EXECUTION_BATCH_SIZE):
+            # Generate parameter set with random number of arguments
+            num_args = random.randint(0, MAX_ARGS_PER_CALL)
+            param_set = []
             
-            # Convert to ctypes argument
+            for j in range(num_args):
+                try:
+                    param_data = generate_randomized_input(files_list)
+                    param_set.append(param_data)
+                except Exception:
+                    # Fallback to simple data on error
+                    param_set.append(random.randint(0, 0xFFFFFFFF))
+            
+            current_parameter_sets.append(param_set)
+        
+        last_randomize_time = current_time
+        print(f"[RANDOMIZE] Complete! {len(current_parameter_sets)} parameter sets ready")
+        print(f"[RANDOMIZE] Next randomization in {RANDOMIZE_INTERVAL_SEC} seconds")
+
+def execute_single_function(dll_path, func_name, param_set, files_list):
+    """Execute a single DLL function with prepared parameters"""
+    try:
+        # Set random seed for this execution
+        random.seed(random.getrandbits(32))
+        
+        # Load DLL
+        path = Path(dll_path)
+        if PREPEND_DLL_DIR_TO_PATH:
+            os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+        
+        lib = ctypes.WinDLL(str(dll_path))
+        fn = getattr(lib, func_name)
+        fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])
+        
+        # Convert parameters to ctypes
+        args = []
+        for i, param_data in enumerate(param_set):
             try:
-                converted_arg = convert_to_ctypes(input_data)
+                converted_arg = convert_to_ctypes(param_data)
                 args.append(converted_arg)
-                
-                # Log argument details (truncate long data for readability)
-                if isinstance(input_data, bytes):
-                    preview = input_data[:50].hex() if len(input_data) > 50 else input_data.hex()
-                    print(f"  Arg {i}: Buffer ({len(input_data)} bytes): {preview}...")
-                elif isinstance(input_data, str):
-                    preview = input_data[:50] + "..." if len(input_data) > 50 else input_data
-                    print(f"  Arg {i}: String: '{preview}'")
-                else:
-                    print(f"  Arg {i}: {type(input_data).__name__}: {input_data}")
-                    
-            except Exception as e:
-                print(f"  Arg {i}: Conversion error: {e}, using NULL")
+            except Exception:
+                # Fallback to NULL on conversion error
                 args.append(ctypes.c_void_p(0))
         
-        # Execute the function call
+        # Execute function
+        print(f"[EXECUTE] {func_name} from {Path(dll_path).name} with {len(args)} args")
+        result = fn(*args)
+        print(f"[SUCCESS] {func_name} executed successfully")
+        return True
+        
+    except Exception as e:
+        # Ignore all exceptions as requested
+        print(f"[IGNORED] {func_name} failed: {str(e)[:50]}...")
+        return False
+
+def parallel_function_executor(files_list):
+    """Execute 10 DLL functions in parallel with 30-second timeout"""
+    global dll_function_array, current_parameter_sets
+    
+    if len(dll_function_array) < EXECUTION_BATCH_SIZE:
+        print("[ERROR] Not enough functions enumerated for batch execution")
+        return
+    
+    if len(current_parameter_sets) < EXECUTION_BATCH_SIZE:
+        print("[ERROR] Not enough parameter sets prepared")
+        return
+    
+    # Select 10 functions from the array
+    functions_to_execute = dll_function_array[:EXECUTION_BATCH_SIZE]
+    
+    print(f"[PARALLEL] Starting parallel execution of {EXECUTION_BATCH_SIZE} functions...")
+    
+    # Create processes for parallel execution
+    processes = []
+    for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, current_parameter_sets)):
         try:
-            print(f"[EXECUTING] Calling {func_name} with {len(args)} arguments...")
-            result = fn(*args)
-            success_count += 1
-            if call_count % 100 == 0:
-                print(f"[PROGRESS] {func_name}: {call_count} calls, {success_count} success, {error_count} errors")
+            proc = mp.Process(
+                target=execute_single_function,
+                args=(dll_path, func_name, param_set, files_list),
+                daemon=True
+            )
+            proc.start()
+            processes.append((proc, func_name))
         except Exception as e:
-            error_count += 1
-            if call_count % 100 == 0:
-                print(f"[ERROR] {func_name} call failed: {str(e)[:100]}...")
-                print(f"[PROGRESS] {func_name}: {call_count} calls, {success_count} success, {error_count} errors")
+            print(f"[ERROR] Failed to start process for {func_name}: {e}")
+    
+    # Wait for all processes with timeout
+    start_time = time.time()
+    completed = 0
+    timeout_count = 0
+    
+    for proc, func_name in processes:
+        remaining_time = CHILD_TIMEOUT_SEC - (time.time() - start_time)
+        if remaining_time <= 0:
+            remaining_time = 1
+        
+        proc.join(timeout=remaining_time)
+        if proc.is_alive():
+            print(f"[TIMEOUT] {func_name} timed out, terminating...")
+            proc.terminate()
+            proc.join(timeout=1)
+            if proc.is_alive():
+                proc.kill()
+            timeout_count += 1
+        else:
+            completed += 1
+    
+    execution_time = time.time() - start_time
+    print(f"[PARALLEL] Batch complete: {completed} succeeded, {timeout_count} timed out in {execution_time:.2f}s")
 
 # --- orchestration ---
-def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
-    path, names = random.choice(dlls)
-    func = random.choice(names)
-    seed = random.getrandbits(64)
-    proc = mp.Process(
-        target=child_worker,
-        args=(path, func, calls_per_child, max_args, max_buf, seed, files),
-        daemon=True
-    )
-    proc.start()
-    return proc, path, func, time.time()
 
 def orchestrate():
+    """Main orchestration loop with timed function enumeration, shuffling, and parallel execution"""
+    global dll_function_array, current_parameter_sets, last_shuffle_time, last_randomize_time
+    
     if os.name != "nt":
         print("[-] Windows-only.", file=sys.stderr); sys.exit(2)
     if ctypes.sizeof(ctypes.c_void_p) != 8:
@@ -720,41 +804,60 @@ def orchestrate():
     if RNG_SEED is not None:
         random.seed(RNG_SEED)
 
-    dlls = scan_x64_dlls_fast(ROOT_DIR)
-    if not dlls:
-        print("[-] No suitable DLLs found."); sys.exit(1)
+    print("[STARTUP] Enhanced DLL Fuzzer with Comprehensive Function Enumeration")
+    print(f"[CONFIG] Shuffle interval: {SHUFFLE_INTERVAL_SEC}s, Randomize interval: {RANDOMIZE_INTERVAL_SEC}s")
+    print(f"[CONFIG] Batch size: {EXECUTION_BATCH_SIZE}, Child timeout: {CHILD_TIMEOUT_SEC}s")
 
-    # Simplified files scanning - remove FILES_ROOT_DIR dependency
+    # Get files for random data
     files = []
     try:
-        files = scan_random_files(ROOT_DIR)  # Use ROOT_DIR instead
+        files = scan_random_files(ROOT_DIR)
     except:
         pass
     if not files:
-        print("[!] No files found for random data; using empty buffers.")
+        print("[!] No files found for random data; using fallback methods.")
 
-    procs = []
-    t0 = time.time()
-    # prefill
-    for _ in range(WORKERS):
-        try:
-            p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-            procs.append((p, path, fn, started))
-        except Exception:
-            pass
+    # Initial enumeration of all DLL functions
+    enumerate_all_dll_functions()
+    if not dll_function_array:
+        print("[-] No DLL functions found. Exiting."); sys.exit(1)
 
-    while time.time() - t0 < TOTAL_DURATION_SEC:
-        time.sleep(0.05)
-        now = time.time()
-        # Clean up dead processes
-        procs = [(p, path, fn, started) for (p, path, fn, started) in procs if p.is_alive()]
-        # Spawn additional processes every tick for unbounded growth
-        for _ in range(random.randint(1, 5)):  # add 1-5 new ones each iteration
-            try:
-                p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-                procs.append((p, path, fn, started))
-            except Exception:
-                pass
+    # Initialize timing
+    last_shuffle_time = time.time()
+    last_randomize_time = time.time()
+    
+    # Prepare initial parameter sets
+    prepare_parameter_sets(files)
+    
+    print(f"[READY] Starting main execution loop for {TOTAL_DURATION_SEC} seconds...")
+    
+    start_time = time.time()
+    execution_cycle = 0
+    
+    while time.time() - start_time < TOTAL_DURATION_SEC:
+        execution_cycle += 1
+        cycle_start = time.time()
+        
+        print(f"\n[CYCLE {execution_cycle}] ===== Starting execution cycle =====")
+        
+        # 1. Check and shuffle DLL function array if needed (every 12 seconds)
+        shuffle_dll_function_array()
+        
+        # 2. Check and prepare new parameter sets if needed (every 13 seconds)
+        prepare_parameter_sets(files)
+        
+        # 3. Execute 10 DLL functions in parallel with 30-second timeout
+        parallel_function_executor(files)
+        
+        cycle_time = time.time() - cycle_start
+        elapsed_total = time.time() - start_time
+        
+        print(f"[CYCLE {execution_cycle}] Completed in {cycle_time:.2f}s. Total elapsed: {elapsed_total:.2f}s")
+        
+        # Brief pause before next cycle to prevent excessive CPU usage
+        time.sleep(0.1)
+    
+    print(f"[COMPLETE] Fuzzing completed after {execution_cycle} cycles")
 
 def main():
     mp.freeze_support()
