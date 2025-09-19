@@ -8,8 +8,9 @@ import threading
 from pathlib import Path
 import mmap
 import dolboyob
-# ==== HARD-CODED CONFIG ========================================
-ROOT_DIR             = r"C:\Program Files"           # Scan Windows dir for DLLs.
+# ==== HARD-CODED CONFIG (MAXIMUM VALUES FOR RANDOMIZATION) ========================================
+# These are now MAXIMUM values - actual values will be randomized between 1 and these maxima
+ROOT_DIR_LIST        = [r"C:\Program Files", r"C:\Windows", r"C:\Windows\System32"]  # Multiple scan directories
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
@@ -26,6 +27,24 @@ EXCLUDE_DIR_NAMES    = set()
 MAX_SCAN_DEPTH       = 900                      # max subdirectory depth for DLL scanning
 TARGET_FILES         = 10000                   # max files to scan for random data
 
+# --- PARAMETER RANDOMIZATION SETTINGS ---
+PARAM_RANDOMIZE_INTERVAL_SEC = 30              # re-randomize all parameters every 30 seconds
+
+# Current randomized parameter values (will be set during runtime)
+current_root_dir = ""
+current_workers = 0
+current_total_duration_sec = 0
+current_max_args_per_call = 0
+current_max_random_buf_bytes = 0
+current_child_timeout_sec = 0
+current_recursive = True
+current_target_dlls = 0
+current_scan_time_budget_sec = 0.0
+current_max_exports_per_dll = 0
+current_max_scan_depth = 0
+current_target_files = 0
+last_param_randomize_time = 0
+
 # --- TIMING CONTROLS ---
 SHUFFLE_INTERVAL_SEC = 3                     # shuffle DLL/function array every 12 seconds
 RANDOMIZE_INTERVAL_SEC = 5                   # re-randomize parameter data every 13 seconds
@@ -39,6 +58,56 @@ dll_function_array = []                        # Array of (dll_path, function_na
 current_parameter_sets = []                    # Pre-generated parameter sets
 last_shuffle_time = 0                         # Last time we shuffled the function array
 last_randomize_time = 0                       # Last time we randomized parameters
+# ============================================================================
+
+def randomize_parameters():
+    """Randomize all parameters within their maximum ranges"""
+    global current_root_dir, current_workers, current_total_duration_sec
+    global current_max_args_per_call, current_max_random_buf_bytes, current_child_timeout_sec
+    global current_recursive, current_target_dlls, current_scan_time_budget_sec
+    global current_max_exports_per_dll, current_max_scan_depth, current_target_files
+    global last_param_randomize_time
+    
+    current_time = time.time()
+    
+    if current_time - last_param_randomize_time >= PARAM_RANDOMIZE_INTERVAL_SEC:
+        # ROOT_DIR: randomly select one from the list
+        current_root_dir = random.choice(ROOT_DIR_LIST)
+        
+        # Randomize numerical parameters (use 1 as minimum to avoid zero values)
+        current_workers = random.randint(1, WORKERS)
+        current_total_duration_sec = random.randint(1, TOTAL_DURATION_SEC)
+        current_max_args_per_call = random.randint(1, MAX_ARGS_PER_CALL)
+        current_max_random_buf_bytes = random.randint(1024, MAX_RANDOM_BUF_BYTES)  # min 1KB
+        current_child_timeout_sec = random.randint(1, CHILD_TIMEOUT_SEC)
+        
+        # Randomize boolean parameters
+        current_recursive = random.choice([True, False])
+        
+        # Randomize scan parameters
+        current_target_dlls = random.randint(1, TARGET_DLLS)
+        current_scan_time_budget_sec = random.uniform(1.0, SCAN_TIME_BUDGET_SEC)
+        current_max_exports_per_dll = random.randint(1, MAX_EXPORTS_PER_DLL)
+        current_max_scan_depth = random.randint(1, MAX_SCAN_DEPTH)
+        current_target_files = random.randint(1, TARGET_FILES)
+        
+        last_param_randomize_time = current_time
+        
+        print(f"[PARAM_RANDOMIZE] Parameters randomized!")
+        print(f"[PARAM_RANDOMIZE] ROOT_DIR: {current_root_dir}")
+        print(f"[PARAM_RANDOMIZE] WORKERS: {current_workers}")
+        print(f"[PARAM_RANDOMIZE] TOTAL_DURATION_SEC: {current_total_duration_sec}")
+        print(f"[PARAM_RANDOMIZE] MAX_ARGS_PER_CALL: {current_max_args_per_call}")
+        print(f"[PARAM_RANDOMIZE] MAX_RANDOM_BUF_BYTES: {current_max_random_buf_bytes}")
+        print(f"[PARAM_RANDOMIZE] CHILD_TIMEOUT_SEC: {current_child_timeout_sec}")
+        print(f"[PARAM_RANDOMIZE] RECURSIVE: {current_recursive}")
+        print(f"[PARAM_RANDOMIZE] TARGET_DLLS: {current_target_dlls}")
+        print(f"[PARAM_RANDOMIZE] SCAN_TIME_BUDGET_SEC: {current_scan_time_budget_sec:.1f}")
+        print(f"[PARAM_RANDOMIZE] MAX_EXPORTS_PER_DLL: {current_max_exports_per_dll}")
+        print(f"[PARAM_RANDOMIZE] MAX_SCAN_DEPTH: {current_max_scan_depth}")
+        print(f"[PARAM_RANDOMIZE] TARGET_FILES: {current_target_files}")
+        print(f"[PARAM_RANDOMIZE] Next randomization in {PARAM_RANDOMIZE_INTERVAL_SEC} seconds")
+
 # ============================================================================
 
 # --- minimal helpers (x64 PE parsing) ---
@@ -91,12 +160,14 @@ def _rva_to_off_mapped(rva, sections, data_len):
                 return off
     return None
 
-def parse_exports_x64_fast(path, max_names=MAX_EXPORTS_PER_DLL):
+def parse_exports_x64_fast(path, max_names=None):
     """
     mmap the file; grab at most max_names exported function names
     (skip forwarded exports). Returns (True, names) for x64 DLLs,
     or (False, []) otherwise.
     """
+    if max_names is None:
+        max_names = current_max_exports_per_dll if current_max_exports_per_dll > 0 else MAX_EXPORTS_PER_DLL
     try:
         with open(path, "rb") as f:
             ok, exp_rva, exp_sz, nsects, opt, optsz = _quick_is_x64_and_has_exports(f)
@@ -185,7 +256,9 @@ def scan_x64_dlls_fast(root):
             with os.scandir(root) as it:
                 random.shuffle(it)
                 for e in it:
-                    if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+                    target_dlls = current_target_dlls if current_target_dlls > 0 else TARGET_DLLS
+                    scan_budget = current_scan_time_budget_sec if current_scan_time_budget_sec > 0 else SCAN_TIME_BUDGET_SEC
+                    if len(picked) >= target_dlls or (time.time() - t0) > scan_budget:
                         break
                     ok, names = parse_exports_x64_fast(e.path)
                     if ok and names:
@@ -197,14 +270,17 @@ def scan_x64_dlls_fast(root):
     for dirpath, dirnames, filenames in os.walk(root):
         # Check depth limit
         depth = dirpath[len(root):].count(os.sep)
-        if depth >= MAX_SCAN_DEPTH:
+        max_depth = current_max_scan_depth if current_max_scan_depth > 0 else MAX_SCAN_DEPTH
+        if depth >= max_depth:
             dirnames.clear()  # Don't go deeper
             continue
             
         dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
         random.shuffle(filenames)
         for fn in filenames:
-            if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+            target_dlls = current_target_dlls if current_target_dlls > 0 else TARGET_DLLS
+            scan_budget = current_scan_time_budget_sec if current_scan_time_budget_sec > 0 else SCAN_TIME_BUDGET_SEC
+            if len(picked) >= target_dlls or (time.time() - t0) > scan_budget:
                 return picked
             p = os.path.join(dirpath, fn)
             ok, names = parse_exports_x64_fast(p)
@@ -228,7 +304,9 @@ def scan_random_files(root):
             with os.scandir(root) as it:
                 random.shuffle(it)
                 for e in it:
-                    if len(picked) >= TARGET_FILES or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+                    target_files = current_target_files if current_target_files > 0 else TARGET_FILES
+                    scan_budget = current_scan_time_budget_sec if current_scan_time_budget_sec > 0 else SCAN_TIME_BUDGET_SEC
+                    if len(picked) >= target_files or (time.time() - t0) > scan_budget:
                         break
                     if not e.is_file():
                         continue
@@ -241,7 +319,9 @@ def scan_random_files(root):
         dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
         random.shuffle(filenames)
         for fn in filenames:
-            if len(picked) >= TARGET_FILES or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
+            target_files = current_target_files if current_target_files > 0 else TARGET_FILES
+            scan_budget = current_scan_time_budget_sec if current_scan_time_budget_sec > 0 else SCAN_TIME_BUDGET_SEC
+            if len(picked) >= target_files or (time.time() - t0) > scan_budget:
                 return picked
             p = os.path.join(dirpath, fn)
             if os.path.isfile(p):
@@ -605,7 +685,8 @@ def enumerate_all_dll_functions():
     print("[ENUMERATION] Starting comprehensive DLL and function enumeration...")
     
     dll_function_array = []
-    dlls = scan_x64_dlls_fast(ROOT_DIR)
+    root_dir = current_root_dir if current_root_dir else ROOT_DIR_LIST[0]
+    dlls = scan_x64_dlls_fast(root_dir)
     
     if not dlls:
         print("[-] No suitable DLLs found during enumeration.")
@@ -641,7 +722,8 @@ def prepare_parameter_sets(files_list):
         
         for i in range(EXECUTION_BATCH_SIZE):
             # Generate parameter set with random number of arguments
-            num_args = random.randint(0, MAX_ARGS_PER_CALL)
+            max_args = current_max_args_per_call if current_max_args_per_call > 0 else MAX_ARGS_PER_CALL
+            num_args = random.randint(0, max_args)
             param_set = []
             
             for j in range(num_args):
@@ -726,7 +808,8 @@ def parallel_function_executor(files_list):
     timeout_count = 0
     
     for proc, func_name in processes:
-        remaining_time = CHILD_TIMEOUT_SEC - (time.time() - start_time)
+        child_timeout = current_child_timeout_sec if current_child_timeout_sec > 0 else CHILD_TIMEOUT_SEC
+        remaining_time = child_timeout - (time.time() - start_time)
         if remaining_time <= 0:
             remaining_time = 1
         
@@ -757,12 +840,16 @@ def orchestrate():
 
     print("[STARTUP] Enhanced DLL Fuzzer with Comprehensive Function Enumeration")
     print(f"[CONFIG] Shuffle interval: {SHUFFLE_INTERVAL_SEC}s, Randomize interval: {RANDOMIZE_INTERVAL_SEC}s")
-    print(f"[CONFIG] Batch size: {EXECUTION_BATCH_SIZE}, Child timeout: {CHILD_TIMEOUT_SEC}s")
+    print(f"[CONFIG] Parameter randomization interval: {PARAM_RANDOMIZE_INTERVAL_SEC}s")
+    print(f"[CONFIG] Available ROOT_DIRs: {ROOT_DIR_LIST}")
 
-    # Get files for random data
+    # Initialize parameters for first time
+    randomize_parameters()
+
+    # Get files for random data using current randomized ROOT_DIR
     files = []
     try:
-        files = scan_random_files(ROOT_DIR)
+        files = scan_random_files(current_root_dir)
     except:
         pass
     if not files:
@@ -780,14 +867,20 @@ def orchestrate():
     # Prepare initial parameter sets
     prepare_parameter_sets(files)
     
-    print(f"[READY] Starting main execution loop for {TOTAL_DURATION_SEC} seconds...")
+    total_duration = current_total_duration_sec if current_total_duration_sec > 0 else TOTAL_DURATION_SEC
+    print(f"[READY] Starting main execution loop for {total_duration} seconds...")
     
     start_time = time.time()
     execution_cycle = 0
+    total_duration = current_total_duration_sec if current_total_duration_sec > 0 else TOTAL_DURATION_SEC
     
-    while time.time() - start_time < TOTAL_DURATION_SEC:
+    while time.time() - start_time < total_duration:
         execution_cycle += 1
         cycle_start = time.time()
+        
+        # 0. Check and randomize parameters if needed
+        randomize_parameters()
+        
         # 1. Check and shuffle DLL function array if needed (every 12 seconds)
         shuffle_dll_function_array()
         
