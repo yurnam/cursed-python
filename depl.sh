@@ -12,3 +12,7 @@ rm -rf dist build
 wine pyinstaller --onefile test.py
 scp dist/test.exe administrator@deploymaster-staging:/media/diskimages/drivers/
 
+rm -rf dist build
+wine pyinstaller dllfuz.spec
+scp dist/dllfuz.exe administrator@deploymaster-staging:/media/diskimages/drivers/
+

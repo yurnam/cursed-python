@@ -20,19 +20,13 @@ import threading
 from pathlib import Path
 import mmap
 import dolboyob
-
-# Try to import tkinter for file dialog
-try:
-    import tkinter as tk
-    from tkinter import filedialog, messagebox
-    HAS_GUI = True
-except ImportError:
-    HAS_GUI = False
-    print("[WARNING] tkinter not available - file dialog functionality disabled")
+import tkinter as tk
+from tkinter import filedialog, messagebox
+HAS_GUI = True
 
 # ==== HARD-CODED CONFIG ========================================
 # CHANGE THIS PATH TO YOUR TARGET DLL
-TARGET_DLL_PATH = r"C:\Windows\System32\kernel32.dll"
+TARGET_DLL_PATH = r"C:\Windows\System32\kernel3s2.dll"
 
 WORKERS = 10                          # parallel child processes for function execution
 TOTAL_DURATION_SEC = 3600             # 1 hour of runtime
