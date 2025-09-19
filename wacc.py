@@ -4,20 +4,18 @@
 
 import os, sys, struct, random, time, ctypes
 import multiprocessing as mp
-import threading
 from pathlib import Path
 import mmap
-import regi
 import dolboyob
 # ==== HARD-CODED CONFIG (your values) ========================================
-ROOT_DIR             = r"C:\Windows"   # Scan Windows dir for DLLs.
-WORKERS              = 20                     # parallel child processes (maintain this number)
+ROOT_DIR             = r"C:\Windows\System32"   # Scan Windows dir for DLLs.
+WORKERS              = 230                     # parallel child processes (maintain this number)
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 CALLS_PER_CHILD      = 10                   # but made infinite in child
 MAX_ARGS_PER_CALL    = 25                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
 CHILD_TIMEOUT_SEC    = 15                    # 1 hour, kill after this
-SCAN_LIMIT_DLLS      = 1000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
+SCAN_LIMIT_DLLS      = 10000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FAST SCANNING SETTINGS ---
