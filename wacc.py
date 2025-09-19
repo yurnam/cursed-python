@@ -1,35 +1,44 @@
 #!/usr/bin/env python3
-# chaos_dll_runner_hardcoded.py
-# Windows-only. Hardcoded config. No argparse.
+# Enhanced DLL Fuzzer with Comprehensive Function Enumeration and Parallel Execution
+# Windows DLL fuzzing tool with complete function enumeration, timed reshuffling, and parallel execution
 
 import os, sys, struct, random, time, ctypes
 import multiprocessing as mp
 import threading
 from pathlib import Path
 import mmap
-import regi
 import dolboyob
-# ==== HARD-CODED CONFIG (your values) ========================================
-ROOT_DIR             = r"C:\Windows\System32"  # Scan here for x64 DLLs with many exports.
-FILES_ROOT_DIR       = r"C:\\"                  # Scan entire drive for maximum DLLs.
-WORKERS              = 100                     # parallel child processes (start with this, but grow unbounded)
+# ==== HARD-CODED CONFIG ========================================
+ROOT_DIR             = r"C:\Program Files"           # Scan Windows dir for DLLs.
+WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
-CALLS_PER_CHILD      = 100                   # but made infinite in child
-MAX_ARGS_PER_CALL    = 255                     # 0..N args
-MAX_RANDOM_BUF_BYTES = 1048                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 360                    # 1 hour, but timeout removed for max chaos
-SCAN_LIMIT_DLLS      = 1000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
+MAX_ARGS_PER_CALL    = 20                     # 0..N args
+MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
+CHILD_TIMEOUT_SEC    = 20                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
-# --- FAST SCANNING SETTINGS ---
-RECURSIVE            = True                    # False = only top-level of ROOT_DIR (fastest)
-TARGET_DLLS          = 500                  # stop scanning once we have this many candidates
-TARGET_FILES         = 10000                 # stop scanning once we have this many file candidates
-SCAN_TIME_BUDGET_SEC = 30.0                   # increased for more scanning
-MAX_EXPORTS_PER_DLL  = 5000                    # at most N names per DLL (enough for chaos)
+# --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
+RECURSIVE            = True                    # Scan recursively
+TARGET_DLLS          = 5000                     # stop scanning once we have this many candidates
+SCAN_TIME_BUDGET_SEC = 120.0                    # time budget for DLL scanning
+MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
+MAX_SCAN_DEPTH       = 900                      # max subdirectory depth for DLL scanning
+TARGET_FILES         = 10000                   # max files to scan for random data
+
+# --- TIMING CONTROLS ---
+SHUFFLE_INTERVAL_SEC = 3                     # shuffle DLL/function array every 12 seconds
+RANDOMIZE_INTERVAL_SEC = 5                   # re-randomize parameter data every 13 seconds
+EXECUTION_BATCH_SIZE = 101                     # execute 10 functions in parallel
+
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
+
+# Global data structures for function enumeration and execution
+dll_function_array = []                        # Array of (dll_path, function_name) tuples
+current_parameter_sets = []                    # Pre-generated parameter sets
+last_shuffle_time = 0                         # Last time we shuffled the function array
+last_randomize_time = 0                       # Last time we randomized parameters
 # ============================================================================
 
 # --- minimal helpers (x64 PE parsing) ---
@@ -178,8 +187,6 @@ def scan_x64_dlls_fast(root):
                 for e in it:
                     if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                         break
-                    if not e.is_file() or not (e.name.lower().endswith(".dll")):
-                        continue
                     ok, names = parse_exports_x64_fast(e.path)
                     if ok and names:
                         picked.append((e.path, names))
@@ -188,12 +195,17 @@ def scan_x64_dlls_fast(root):
         return picked
 
     for dirpath, dirnames, filenames in os.walk(root):
+        # Check depth limit
+        depth = dirpath[len(root):].count(os.sep)
+        if depth >= MAX_SCAN_DEPTH:
+            dirnames.clear()  # Don't go deeper
+            continue
+            
         dirnames[:] = [d for d in dirnames if not should_skip_dir(d)]
         random.shuffle(filenames)
         for fn in filenames:
             if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                 return picked
-            if not (fn.lower().endswith(".dll")): continue
             p = os.path.join(dirpath, fn)
             ok, names = parse_exports_x64_fast(p)
             if ok and names:
@@ -238,8 +250,36 @@ def scan_random_files(root):
 
 # --- child worker: load DLL & call random export a few times ---
 def get_random_file_bytes(sz, files_list):
+    """Get random bytes from files with enhanced dolboyob integration"""
     if sz == 0 or not files_list:
         return b""
+    
+    # Enhanced functionality: Use dolboyob class to get random data (30% chance)
+    if random.random() < 0.3:
+        try:
+            print(f"[DOLBOYOB DATA] Using dolboyob class for random data generation")
+            dolboyob_instance = dolboyob.долбоёб()
+            dolboyob_data = dolboyob_instance.хуй(None)
+            if dolboyob_data:
+                # Convert string data to bytes
+                if isinstance(dolboyob_data, str):
+                    data_bytes = dolboyob_data.encode('utf-8', errors='ignore')
+                else:
+                    data_bytes = bytes(dolboyob_data)
+                
+                # Adjust size to requested amount
+                if len(data_bytes) > sz:
+                    data_bytes = data_bytes[:sz]
+                elif len(data_bytes) < sz:
+                    # Pad with random bytes
+                    padding = bytes([random.randint(0, 255) for _ in range(sz - len(data_bytes))])
+                    data_bytes += padding
+                    
+                print(f"[DOLBOYOB SUCCESS] Generated {len(data_bytes)} bytes from dolboyob!")
+                return data_bytes
+        except Exception as dolboyob_error:
+            print(f"[DOLBOYOB ERROR] Error getting data from dolboyob: {dolboyob_error}")
+    
     rf = random.choice(files_list)
     try:
         fs = os.path.getsize(rf)
@@ -254,80 +294,460 @@ def get_random_file_bytes(sz, files_list):
     except:
         return b""
 
-def child_worker(path_str, func_name, iterations, max_args, max_buf, seed, files_list):
-    random.seed(seed)
-    path = Path(path_str)
-    if PREPEND_DLL_DIR_TO_PATH:
-        os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
-    try:
-        lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
-    except Exception:
-        return
-    try:
-        fn = getattr(lib, func_name)
-    except Exception:
-        return
-    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])  # random restype for more chaos
-
-    bufs = []
-    for _ in range(64):  # more buffers
-        sz = random.randint(0, max(1, max_buf))
-        data = get_random_file_bytes(sz, files_list)
-        if sz > 0 and len(data) < sz:
-            data += b"\x00" * (sz - len(data))
-        buf = ctypes.create_string_buffer(data)
-        bufs.append(buf)
-
-    while True:  # infinite loop for maximum calls
-        nargs = random.randint(0, max_args)
-        args = []
-        for __ in range(nargs):
-            kind = random.randint(0, 9)
-            if kind == 0:
-                args.append(ctypes.c_uint64(random.getrandbits(64)))
-            elif kind == 1:
-                args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
-            elif kind == 2:
-                args.append(ctypes.c_void_p(0))  # NULL
-            elif kind == 3:
-                b = random.choice(bufs)
-                args.append(ctypes.cast(b, ctypes.c_void_p))
-            elif kind == 4:
-                b = random.choice(bufs)
-                pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
-                args.append(ctypes.cast(pptr, ctypes.c_void_p))
-            elif kind == 5:
-                args.append(ctypes.c_double(random.uniform(-1e12, 1e12)))
-            elif kind == 6:
-                sz = random.randint(0, 4096)
-                s = get_random_file_bytes(sz, files_list)
-                args.append(ctypes.c_char_p(s))
-            elif kind == 7:
-                s = ''.join(chr(random.randint(0, 0x10FFFF)) for _ in range(random.randint(0, 1024)))
-                args.append(ctypes.c_wchar_p(s))
-            elif kind == 8:
-                args.append(ctypes.c_int(random.getrandbits(32) - (1 << 31)))
-            else:
-                args.append(ctypes.c_void_p(random.getrandbits(64)))  # random pointer
+def generate_randomized_input(files_list=None):
+    """
+    Generate comprehensive randomized inputs for DLL execution.
+    Returns various types of data including binary blobs, strings, integers, and more.
+    """
+    input_type = random.randint(0, 25)  # 26 different input types
+    
+    if input_type == 0:
+        # os.urandom() - cryptographically random bytes
+        size = random.choice([4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096])
+        data = os.urandom(size)
+        return data
+        
+    elif input_type == 1:
+        # Random ASCII string
+        length = random.randint(5, 50)
+        chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        string = ''.join(random.choice(chars) for _ in range(length))
+        return string
+        
+    elif input_type == 2:
+        # Random blob from fandom file in program Files dorectory
+        system_files = files_list if files_list else []
+        if not system_files:
+            system_files = scan_random_files(r"C:\Program Files")
+        
+        target_file = random.choice(system_files)
         try:
-            _ = fn(*args)
-        except Exception:
-            pass  # child can crash/hang; orchestrator will replace it
+            if os.path.exists(target_file):
+                file_size = os.path.getsize(target_file)
+                if file_size > 0:
+                    # Random size between 1KB and 100KB
+                    chunk_size = random.randint(1024, min(100*1024, file_size))
+                    offset = random.randint(0, max(0, file_size - chunk_size))
+                    
+                    with open(target_file, 'rb') as f:
+                        f.seek(offset)
+                        data = f.read(chunk_size)
+                    return data
+        except:
+            pass
+        
+        # Fallback to random bytes if file access fails
+        size = random.randint(1024, 50*1024)
+        data = os.urandom(size)
+        return data
+        
+    elif input_type == 3:
+        # Random integer (including special values like 69420)
+        special_ints = [0, 1, -1, 69420, 42, 1337, 0xDEADBEEF, 0xCAFEBABE, 0x12345678, 
+                       0xFFFFFFFF, 0x80000000, 2147483647, -2147483648]
+        if random.random() < 0.3:
+            value = random.choice(special_ints)
+        else:
+            value = random.randint(-2**31, 2**31-1)
+        return value
+        
+    elif input_type == 4:
+        # Random float
+        special_floats = [0.0, 1.0, -1.0, 3.14159, 2.71828, float('inf'), float('-inf')]
+        if random.random() < 0.2:
+            value = random.choice(special_floats)
+        else:
+            value = random.uniform(-1e12, 1e12)
+        return value
+        
+    elif input_type == 5:
+        # Unicode string (various character sets)
+        char_sets = [
+            'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',  # Cyrillic
+            '你好世界中文测试',  # Chinese
+            'αβγδεζηθικλμνξοπρστυφχψω',  # Greek
+            '日本語テスト',  # Japanese
+            'العربية',  # Arabic
+        ]
+        charset = random.choice(char_sets)
+        length = random.randint(5, 30)
+        string = ''.join(random.choice(charset) for _ in range(length))
+        return string
+        
+    elif input_type == 6:
+        # NULL bytes
+        size = random.choice([4, 8, 16, 32, 64, 128, 256])
+        data = b'\x00' * size
+        return data
+        
+    elif input_type == 7:
+        # 0xFF pattern
+        size = random.choice([4, 8, 16, 32, 64, 128])
+        data = b'\xFF' * size
+        return data
+        
+    elif input_type == 8:
+        # DEADBEEF pattern
+        pattern = b'\xDE\xAD\xBE\xEF'
+        repeats = random.randint(1, 64)
+        data = pattern * repeats
+        return data
+        
+    elif input_type == 9:
+        # Random memory address (user-mode range)
+        addresses = [0x400000, 0x10000000, 0x7FFE0000, 0x77000000, 0x7C800000]
+        base = random.choice(addresses)
+        offset = random.randint(0, 0xFFFF)
+        addr = base + offset
+        return addr
+        
+    elif input_type == 10:
+        # Windows error codes
+        error_codes = [0, 2, 5, 6, 87, 122, 123, 1, 3, 4, 32, 183, 267]
+        code = random.choice(error_codes)
+        return code
+        
+    elif input_type == 11:
+        # Random GUID-like structure
+        guid_bytes = os.urandom(16)
+        return guid_bytes
+        
+    elif input_type == 12:
+        # Registry path strings
+        paths = [
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows",
+            "HKEY_CURRENT_USER\\Software\\Microsoft",
+            "HKLM\\SYSTEM\\CurrentControlSet\\Services",
+            "HKCU\\Control Panel\\Desktop"
+        ]
+        path = random.choice(paths)
+        return path
+        
+    elif input_type == 13:
+        # Network-like data (IP addresses, ports)
+        if random.random() < 0.5:
+            ip = f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
+            return ip
+        else:
+            port = random.randint(1, 65535)
+            return port
+            
+    elif input_type == 14:
+        # Timestamp data
+        timestamps = [
+            int(time.time()),  # Current time
+            0,  # Epoch
+            random.randint(946684800, 2147483647),  # Random time between 2000-2038
+            0x7FFFFFFF,  # Max 32-bit timestamp
+        ]
+        ts = random.choice(timestamps)
+        return ts
+        
+    elif input_type == 15:
+        # Windows handle values
+        handles = [0, 0xFFFFFFFF, 0x80000000, random.randint(1, 0xFFFF)]
+        handle = random.choice(handles)
+        return handle
+        
+    elif input_type == 16:
+        # File paths
+        paths = [
+            r"C:\Windows\System32",
+            r"C:\Program Files",
+            r"C:\Users\Public",
+            r"\\.\pipe\mypipe",
+            r"\\?\C:\test",
+            r"C:\$Recycle.Bin"
+        ]
+        path = random.choice(paths)
+        return path
+        
+    elif input_type == 17:
+        # Structured data (like Windows RECT, POINT, etc.)
+        struct_data = struct.pack('<IIII', 
+                                 random.randint(0, 1920),  # x
+                                 random.randint(0, 1080),  # y  
+                                 random.randint(0, 1920),  # width
+                                 random.randint(0, 1080))  # height
+        return struct_data
+        
+    elif input_type == 18:
+        # Dolboyob integration
+        try:
+            dolboyob_instance = dolboyob.долбоёб()
+            dolboyob_data = dolboyob_instance.хуй(None)
+            if dolboyob_data:
+                if isinstance(dolboyob_data, str):
+                    data = dolboyob_data.encode('utf-8', errors='ignore')
+                else:
+                    data = bytes(dolboyob_data)
+                return data
+        except:
+            pass
+        # Fallback
+        data = os.urandom(random.randint(16, 256))
+        return data
+        
+    elif input_type == 19:
+        # Large integer (64-bit)
+        value = random.getrandbits(64)
+        return value
+        
+    elif input_type == 20:
+        # Specific file chunk with exact offset (like user's example)
+        target_files = [
+            (r"C:\Windows\explorer.exe", "explorer.exe"),
+            (r"C:\Intel\Thunderbolt\setup.exe", "setup.exe"),
+            (r"C:\Windows\System32\kernel32.dll", "kernel32.dll"),
+        ]
+        
+        file_path, file_name = random.choice(target_files)
+        try:
+            if os.path.exists(file_path):
+                # Use specific sizes like in user's examples
+                sizes = [42, 67*1024, 128, 1024, 4096]  # Including 67KB and 42 bytes
+                offsets = [69, 0, 100, 256, 512, 1024]  # Including offset 69
+                
+                chunk_size = random.choice(sizes)
+                offset = random.choice(offsets)
+                
+                file_size = os.path.getsize(file_path)
+                if offset < file_size:
+                    actual_size = min(chunk_size, file_size - offset)
+                    with open(file_path, 'rb') as f:
+                        f.seek(offset)
+                        data = f.read(actual_size)
+                    return data
+        except:
+            pass
+            
+        # Fallback
+        data = os.urandom(random.randint(32, 1024))
+        return data
+        
+    elif input_type == 21:
+        # Random boolean-like values
+        values = [0, 1, True, False]
+        value = random.choice(values)
+        return value
+        
+    elif input_type == 22:
+        # Array-like data
+        element_count = random.randint(1, 16)
+        elements = [random.randint(0, 0xFFFF) for _ in range(element_count)]
+        array_data = struct.pack(f'<{element_count}H', *elements)
+        return array_data
+        
+    elif input_type == 23:
+        # Random string from predefined pool (like user's example)
+        strings = [
+            "tlasjfdlksjfokjaswoefjslfjape4p",  # User's example
+            "randomstringdata123456789",
+            "abcdefghijklmnopqrstuvwxyz",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "1234567890!@#$%^&*()",
+            "testdataforDLLexecution",
+            "chaos_dll_random_string",
+        ]
+        string = random.choice(strings)
+        return string
+        
+    elif input_type == 24:
+        # Random small buffer (typical for many APIs)
+        size = random.choice([1, 2, 4, 8, 16, 32])
+        data = os.urandom(size)
+        return data
+        
+    else:  # input_type == 25
+        # Mixed/composite data
+        parts = []
+        for _ in range(random.randint(2, 5)):
+            part_size = random.randint(4, 32)
+            parts.append(os.urandom(part_size))
+        data = b''.join(parts)
+        return data
+
+def convert_to_ctypes(input_data):
+    """Convert randomized input data to appropriate ctypes argument"""
+    if isinstance(input_data, bytes):
+        # Convert bytes to string buffer
+        if len(input_data) > 0:
+            return ctypes.create_string_buffer(input_data)
+        else:
+            return ctypes.c_void_p(0)
+    elif isinstance(input_data, str):
+        # Convert string to char pointer
+        try:
+            return ctypes.c_char_p(input_data.encode('utf-8', errors='ignore'))
+        except:
+            return ctypes.c_void_p(0)
+    elif isinstance(input_data, int):
+        # Convert integer to appropriate size
+        if -2**31 <= input_data <= 2**31-1:
+            return ctypes.c_int(input_data)
+        elif 0 <= input_data <= 2**32-1:
+            return ctypes.c_uint32(input_data)
+        elif 0 <= input_data <= 2**64-1:
+            return ctypes.c_uint64(input_data)
+        else:
+            return ctypes.c_void_p(input_data & 0xFFFFFFFFFFFFFFFF)
+    elif isinstance(input_data, float):
+        return ctypes.c_double(input_data)
+    elif isinstance(input_data, bool):
+        return ctypes.c_bool(input_data)
+    else:
+        # Fallback for unknown types
+        return ctypes.c_void_p(random.randint(0, 0xFFFFFFFF))
+
+def enumerate_all_dll_functions():
+    """Enumerate every DLL and every function, store in array"""
+    global dll_function_array
+    print("[ENUMERATION] Starting comprehensive DLL and function enumeration...")
+    
+    dll_function_array = []
+    dlls = scan_x64_dlls_fast(ROOT_DIR)
+    
+    if not dlls:
+        print("[-] No suitable DLLs found during enumeration.")
+        return
+    
+    total_functions = 0
+    for dll_path, function_names in dlls:
+        for func_name in function_names:
+            dll_function_array.append((dll_path, func_name))
+            total_functions += 1
+    
+    print(f"[ENUMERATION] Complete! Found {total_functions} functions across {len(dlls)} DLLs")
+    print(f"[ENUMERATION] Sample functions: {dll_function_array[:5]}")
+    time.sleep(10)
+
+def shuffle_dll_function_array():
+    """Shuffle the DLL/function array every 12 seconds"""
+    global dll_function_array, last_shuffle_time
+    current_time = time.time()
+    
+    if current_time - last_shuffle_time >= SHUFFLE_INTERVAL_SEC:
+        random.shuffle(dll_function_array)
+        last_shuffle_time = current_time
+
+
+def prepare_parameter_sets(files_list):
+    """Prepare 10 sets of randomized parameter data, re-randomize every 13 seconds"""
+    global current_parameter_sets, last_randomize_time
+    current_time = time.time()
+    
+    if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC:
+        current_parameter_sets = []
+        
+        for i in range(EXECUTION_BATCH_SIZE):
+            # Generate parameter set with random number of arguments
+            num_args = random.randint(0, MAX_ARGS_PER_CALL)
+            param_set = []
+            
+            for j in range(num_args):
+                try:
+                    param_data = generate_randomized_input(files_list)
+                    param_set.append(param_data)
+                except Exception:
+                    # Fallback to simple data on error
+                    param_set.append(random.randint(0, 0xFFFFFFFF))
+            
+            current_parameter_sets.append(param_set)
+        
+        last_randomize_time = current_time
+        print(f"[RANDOMIZE] Complete! {len(current_parameter_sets)} parameter sets ready")
+        print(f"[RANDOMIZE] Next randomization in {RANDOMIZE_INTERVAL_SEC} seconds")
+
+def execute_single_function(dll_path, func_name, param_set, files_list):
+    """Execute a single DLL function with prepared parameters"""
+    try:
+        # Set random seed for this execution
+        random.seed(random.getrandbits(32))
+        
+        # Load DLL
+        path = Path(dll_path)
+        if PREPEND_DLL_DIR_TO_PATH:
+            os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+        
+        lib = ctypes.WinDLL(str(dll_path))
+        fn = getattr(lib, func_name)
+        fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])
+        
+        # Convert parameters to ctypes
+        args = []
+        for i, param_data in enumerate(param_set):
+            try:
+                converted_arg = convert_to_ctypes(param_data)
+                args.append(converted_arg)
+            except Exception:
+                # Fallback to NULL on conversion error
+                args.append(ctypes.c_void_p(0))
+        
+        # Execute function
+        result = fn(*args)
+        # what can we do silly with the result ?
+
+        return True
+        
+    except Exception as e:
+        return False
+
+def parallel_function_executor(files_list):
+    """Execute 10 DLL functions in parallel with 30-second timeout"""
+    global dll_function_array, current_parameter_sets
+    
+    if len(dll_function_array) < EXECUTION_BATCH_SIZE:
+        print("[ERROR] Not enough functions enumerated for batch execution")
+        return
+    
+    if len(current_parameter_sets) < EXECUTION_BATCH_SIZE:
+        print("[ERROR] Not enough parameter sets prepared")
+        return
+    
+    # Select 10 functions from the array
+    functions_to_execute = dll_function_array[:EXECUTION_BATCH_SIZE]
+    # Create processes for parallel execution
+    processes = []
+    for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, current_parameter_sets)):
+        try:
+            proc = mp.Process(
+                target=execute_single_function,
+                args=(dll_path, func_name, param_set, files_list),
+                daemon=True
+            )
+            proc.start()
+            processes.append((proc, func_name))
+        except Exception as e:
+            print(f"[ERROR] Failed to start process for {func_name}: {e}")
+    
+    # Wait for all processes with timeout
+    start_time = time.time()
+    completed = 0
+    timeout_count = 0
+    
+    for proc, func_name in processes:
+        remaining_time = CHILD_TIMEOUT_SEC - (time.time() - start_time)
+        if remaining_time <= 0:
+            remaining_time = 1
+        
+        proc.join(timeout=remaining_time)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=1)
+            if proc.is_alive():
+                proc.kill()
+            timeout_count += 1
+        else:
+            completed += 1
+    
+    execution_time = time.time() - start_time
 
 # --- orchestration ---
-def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
-    path, names = random.choice(dlls)
-    func = random.choice(names)
-    seed = random.getrandbits(64)
-    proc = mp.Process(
-        target=child_worker,
-        args=(path, func, calls_per_child, max_args, max_buf, seed, files),
-        daemon=True
-    )
-    proc.start()
-    return proc, path, func, time.time()
 
 def orchestrate():
+    """Main orchestration loop with timed function enumeration, shuffling, and parallel execution"""
+    global dll_function_array, current_parameter_sets, last_shuffle_time, last_randomize_time
+    
     if os.name != "nt":
         print("[-] Windows-only.", file=sys.stderr); sys.exit(2)
     if ctypes.sizeof(ctypes.c_void_p) != 8:
@@ -335,59 +755,63 @@ def orchestrate():
     if RNG_SEED is not None:
         random.seed(RNG_SEED)
 
-    dlls = scan_x64_dlls_fast(ROOT_DIR)
-    if not dlls:
-        print("[-] No suitable DLLs found."); sys.exit(1)
+    print("[STARTUP] Enhanced DLL Fuzzer with Comprehensive Function Enumeration")
+    print(f"[CONFIG] Shuffle interval: {SHUFFLE_INTERVAL_SEC}s, Randomize interval: {RANDOMIZE_INTERVAL_SEC}s")
+    print(f"[CONFIG] Batch size: {EXECUTION_BATCH_SIZE}, Child timeout: {CHILD_TIMEOUT_SEC}s")
 
-    files = scan_random_files(FILES_ROOT_DIR)
+    # Get files for random data
+    files = []
+    try:
+        files = scan_random_files(ROOT_DIR)
+    except:
+        pass
     if not files:
-        print("[!] No files found for random data; using empty buffers.")
+        print("[!] No files found for random data; using fallback methods.")
 
-    procs = []
-    t0 = time.time()
-    # prefill
-    for _ in range(WORKERS):
-        try:
-            p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-            procs.append((p, path, fn, started))
-        except Exception:
-            pass
+    # Initial enumeration of all DLL functions
+    enumerate_all_dll_functions()
+    if not dll_function_array:
+        print("[-] No DLL functions found. Exiting."); sys.exit(1)
 
-    while time.time() - t0 < TOTAL_DURATION_SEC:
-        time.sleep(0.05)
-        now = time.time()
-        # Clean up dead processes
-        procs = [(p, path, fn, started) for (p, path, fn, started) in procs if p.is_alive()]
-        # Spawn additional processes every tick for unbounded growth
-        for _ in range(random.randint(1, 5)):  # add 1-5 new ones each iteration
-            try:
-                p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-                procs.append((p, path, fn, started))
-            except Exception:
-                pass
+    # Initialize timing
+    last_shuffle_time = time.time()
+    last_randomize_time = time.time()
+    
+    # Prepare initial parameter sets
+    prepare_parameter_sets(files)
+    
+    print(f"[READY] Starting main execution loop for {TOTAL_DURATION_SEC} seconds...")
+    
+    start_time = time.time()
+    execution_cycle = 0
+    
+    while time.time() - start_time < TOTAL_DURATION_SEC:
+        execution_cycle += 1
+        cycle_start = time.time()
+        # 1. Check and shuffle DLL function array if needed (every 12 seconds)
+        shuffle_dll_function_array()
+        
+        # 2. Check and prepare new parameter sets if needed (every 13 seconds)
+        prepare_parameter_sets(files)
+        
+        # 3. Execute 10 DLL functions in parallel with 30-second timeout
+        parallel_function_executor(files)
+        
+        cycle_time = time.time() - cycle_start
+        elapsed_total = time.time() - start_time
 
-    # cleanup
-    for (p, _, _, _) in procs:
-        if p.is_alive():
-            try: p.terminate()
-            except Exception: pass
+        # Brief pause before next cycle to prevent excessive CPU usage
+        time.sleep(0.1)
+    
 
 def main():
     mp.freeze_support()
     mp.set_start_method("spawn", force=True)
     try:
         orchestrate()
-    except KeyboardInterrupt:
+    except:
         pass
     print("[+] Done.")
 
 if __name__ == "__main__":
-    dolboyobthread = threading.Thread(target=dolboyob.main, daemon=True)
-    waccthread = threading.Thread(target=main, daemon=True)
-    regithread = threading.Thread(target=regi.main, daemon=True)
-    waccthread.start()
-    regithread.start()
-    dolboyobthread.start()
-    waccthread.join()
-    regithread.join()
-    dolboyobthread.join()
+    main()

