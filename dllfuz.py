@@ -21,23 +21,19 @@ from pathlib import Path
 import mmap
 import dolboyob
 
-# Try to import GUI components
-try:
-    import tkinter as tk
-    from tkinter import filedialog, messagebox
-    HAS_GUI = True
-except ImportError:
-    HAS_GUI = False
+import tkinter as tk
+from tkinter import filedialog, messagebox
+HAS_GUI = True
 
 # ==== HARD-CODED CONFIG ========================================
 # CHANGE THIS PATH TO YOUR TARGET DLL
 TARGET_DLL_PATH = r"C:\Windows\System32\kernel3s2.dll"
 
-WORKERS = 10                          # parallel child processes for function execution
-TOTAL_DURATION_SEC = 3600             # 1 hour of runtime
-MAX_ARGS_PER_CALL = 20               # 0..N args
+WORKERS = 109                          # parallel child processes for function execution
+TOTAL_DURATION_SEC = 36009             # 1 hour of runtime
+MAX_ARGS_PER_CALL = 21               # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576        # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC = 2                # timeout per child process
+CHILD_TIMEOUT_SEC = 10                # timeout per child process
 RNG_SEED = None                      # set to an int for reproducible chaos, or None
 
 # --- TIMING CONTROLS ---
@@ -623,6 +619,7 @@ def parallel_function_executor(files_list):
     processes = []
     for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, param_sets_to_use)):
         try:
+            print(f"[EXEC] Starting process for function: {func_name} with {len(param_set)} params")
             proc = mp.Process(
                 target=execute_single_function,
                 args=(dll_path, func_name, param_set, files_list),
@@ -654,7 +651,6 @@ def parallel_function_executor(files_list):
             completed += 1
     
     execution_time = time.time() - start_time
-    print(f"[EXEC] Batch complete: {completed}/{len(processes)} functions executed successfully")
 
 def scan_random_files(root_dir):
     """Scan for random files to use as input data source"""
