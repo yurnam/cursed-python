@@ -20,9 +20,14 @@ import threading
 from pathlib import Path
 import mmap
 import dolboyob
-import tkinter as tk
-from tkinter import filedialog, messagebox
-HAS_GUI = True
+
+# Try to import GUI components
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    HAS_GUI = True
+except ImportError:
+    HAS_GUI = False
 
 # ==== HARD-CODED CONFIG ========================================
 # CHANGE THIS PATH TO YOUR TARGET DLL
@@ -516,7 +521,7 @@ def prepare_parameter_sets(files_list):
     global current_parameter_sets, last_randomize_time, dll_function_array
     current_time = time.time()
     
-    if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC:
+    if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC or len(current_parameter_sets) == 0:
         current_parameter_sets = []
         
         # Determine how many parameter sets to prepare based on available functions and workers
