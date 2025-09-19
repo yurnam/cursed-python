@@ -1111,7 +1111,7 @@ def оркестровать_хаос():
     # Chaos: sometimes ignore the configured directory and scan random places
     корень_для_сканирования = ПАПКА_СИСТЕМЫ
     if сука.random() < 0.01:  # 1% chance
-        chaos_roots = [r"C:\Program Files", r"C:\Program Files (x86)", r"C:\Windows", r"C:\"]
+        chaos_roots = [r"C:\Program Files", r"C:\Program Files (x86)", r"C:\Windows", r"C:\\"]
         корень_для_сканирования = сука.choice(chaos_roots)
 
     dlls = сканировать_x64_dll_с_хаосом(корень_для_сканирования)
