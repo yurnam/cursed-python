@@ -320,7 +320,7 @@ def generate_randomized_input(files_list=None):
         return string
         
     elif input_type == 2:
-        # Random blob from system file (like explorer.exe, kernel32.dll)
+        # Random blob from system file (including exact user examples)
         system_files = [
             r"C:\Windows\explorer.exe",
             r"C:\Windows\System32\kernel32.dll", 
@@ -332,20 +332,32 @@ def generate_randomized_input(files_list=None):
             r"C:\Windows\System32\msvcrt.dll"
         ]
         
+        # Add files from files_list if available
+        if files_list:
+            system_files.extend(files_list[:5])
+        
         target_file = random.choice(system_files)
         try:
             if os.path.exists(target_file):
                 file_size = os.path.getsize(target_file)
-                if file_size > 0:
-                    # Random size between 1KB and 100KB
-                    chunk_size = random.randint(1024, min(100*1024, file_size))
-                    offset = random.randint(0, max(0, file_size - chunk_size))
+                if file_size > 1000:
+                    # Include user's specific examples with higher probability
+                    if "explorer.exe" in target_file.lower() and random.random() < 0.2:
+                        chunk_size = 67 * 1024  # User's 67KB example
+                        offset = random.randint(0, max(0, file_size - chunk_size))
+                    elif "setup.exe" in target_file.lower() and random.random() < 0.2:
+                        chunk_size = 42  # User's 42 bytes example
+                        offset = 69 if file_size > 111 else random.randint(0, max(0, file_size - chunk_size))
+                    else:
+                        # Random size between 1KB and 100KB
+                        chunk_size = random.randint(1024, min(100*1024, file_size))
+                        offset = random.randint(0, max(0, file_size - chunk_size))
                     
                     with open(target_file, 'rb') as f:
                         f.seek(offset)
                         data = f.read(chunk_size)
                     
-                    print(f"[RANDOM INPUT] {len(data)} bytes from {target_file} at offset {offset}")
+                    print(f"[RANDOM INPUT] {len(data)} bytes from {Path(target_file).name} at offset {offset}")
                     return data
         except:
             pass
@@ -577,15 +589,23 @@ def generate_randomized_input(files_list=None):
         return array_data
         
     elif input_type == 23:
-        # Random string from predefined pool (like user's example)
+        # Random string from predefined pool (including user's exact example)
         strings = [
-            "tlasjfdlksjfokjaswoefjslfjape4p",  # User's example
+            "tlasjfdlksjfokjaswoefjslfjape4p",  # User's exact example - higher probability
+            "tlasjfdlksjfokjaswoefjslfjape4p",  # Duplicate for higher chance
             "randomstringdata123456789",
-            "abcdefghijklmnopqrstuvwxyz",
+            "abcdefghijklmnopqrstuvwxyz", 
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "1234567890!@#$%^&*()",
             "testdataforDLLexecution",
             "chaos_dll_random_string",
+            "WindowsAPITestString",
+            "kernel32_function_call",
+            "ntdll_random_parameter"
+        ]
+        string = random.choice(strings)
+        print(f"[RANDOM INPUT] Predefined string: '{string}'")
+        return string
         ]
         string = random.choice(strings)
         print(f"[RANDOM INPUT] Predefined string: '{string}'")
