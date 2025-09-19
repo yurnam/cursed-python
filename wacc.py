@@ -27,6 +27,7 @@ SCAN_TIME_BUDGET_SEC = 15.0                   # increased for more scanning
 MAX_EXPORTS_PER_DLL  = 5000                    # at most N names per DLL (enough for chaos)
 EXCLUDE_DIR_NAMES    = set()
 MAX_SCAN_DEPTH       = 6                       # max subdirectory depth for DLL scanning
+TARGET_FILES         = 1000                   # max files to scan for random data
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
 # ============================================================================
@@ -287,96 +288,418 @@ def get_random_file_bytes(sz, files_list):
     except:
         return b""
 
+def generate_randomized_input(files_list=None):
+    """
+    Generate comprehensive randomized inputs for DLL execution.
+    Returns various types of data including binary blobs, strings, integers, and more.
+    """
+    input_type = random.randint(0, 25)  # 26 different input types
+    
+    if input_type == 0:
+        # os.urandom() - cryptographically random bytes
+        size = random.choice([4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096])
+        data = os.urandom(size)
+        print(f"[RANDOM INPUT] os.urandom({size}) -> {len(data)} bytes: {data[:20].hex()}...")
+        return data
+        
+    elif input_type == 1:
+        # Random ASCII string
+        length = random.randint(5, 50)
+        chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        string = ''.join(random.choice(chars) for _ in range(length))
+        print(f"[RANDOM INPUT] ASCII string ({length} chars): '{string}'")
+        return string
+        
+    elif input_type == 2:
+        # Random blob from system file (like explorer.exe, kernel32.dll)
+        system_files = [
+            r"C:\Windows\explorer.exe",
+            r"C:\Windows\System32\kernel32.dll", 
+            r"C:\Windows\System32\ntdll.dll",
+            r"C:\Windows\System32\user32.dll",
+            r"C:\Windows\System32\advapi32.dll",
+            r"C:\Intel\Thunderbolt\setup.exe",
+            r"C:\Windows\System32\shell32.dll",
+            r"C:\Windows\System32\msvcrt.dll"
+        ]
+        
+        target_file = random.choice(system_files)
+        try:
+            if os.path.exists(target_file):
+                file_size = os.path.getsize(target_file)
+                if file_size > 0:
+                    # Random size between 1KB and 100KB
+                    chunk_size = random.randint(1024, min(100*1024, file_size))
+                    offset = random.randint(0, max(0, file_size - chunk_size))
+                    
+                    with open(target_file, 'rb') as f:
+                        f.seek(offset)
+                        data = f.read(chunk_size)
+                    
+                    print(f"[RANDOM INPUT] {len(data)} bytes from {target_file} at offset {offset}")
+                    return data
+        except:
+            pass
+        
+        # Fallback to random bytes if file access fails
+        size = random.randint(1024, 50*1024)
+        data = os.urandom(size)
+        print(f"[RANDOM INPUT] Fallback random bytes: {len(data)} bytes")
+        return data
+        
+    elif input_type == 3:
+        # Random integer (including special values like 69420)
+        special_ints = [0, 1, -1, 69420, 42, 1337, 0xDEADBEEF, 0xCAFEBABE, 0x12345678, 
+                       0xFFFFFFFF, 0x80000000, 2147483647, -2147483648]
+        if random.random() < 0.3:
+            value = random.choice(special_ints)
+        else:
+            value = random.randint(-2**31, 2**31-1)
+        print(f"[RANDOM INPUT] Integer: {value} (0x{value & 0xFFFFFFFF:08X})")
+        return value
+        
+    elif input_type == 4:
+        # Random float
+        special_floats = [0.0, 1.0, -1.0, 3.14159, 2.71828, float('inf'), float('-inf')]
+        if random.random() < 0.2:
+            value = random.choice(special_floats)
+        else:
+            value = random.uniform(-1e12, 1e12)
+        print(f"[RANDOM INPUT] Float: {value}")
+        return value
+        
+    elif input_type == 5:
+        # Unicode string (various character sets)
+        char_sets = [
+            'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',  # Cyrillic
+            '你好世界中文测试',  # Chinese
+            'αβγδεζηθικλμνξοπρστυφχψω',  # Greek
+            '日本語テスト',  # Japanese
+            'العربية',  # Arabic
+        ]
+        charset = random.choice(char_sets)
+        length = random.randint(5, 30)
+        string = ''.join(random.choice(charset) for _ in range(length))
+        print(f"[RANDOM INPUT] Unicode string: '{string}'")
+        return string
+        
+    elif input_type == 6:
+        # NULL bytes
+        size = random.choice([4, 8, 16, 32, 64, 128, 256])
+        data = b'\x00' * size
+        print(f"[RANDOM INPUT] NULL bytes: {size} bytes")
+        return data
+        
+    elif input_type == 7:
+        # 0xFF pattern
+        size = random.choice([4, 8, 16, 32, 64, 128])
+        data = b'\xFF' * size
+        print(f"[RANDOM INPUT] 0xFF pattern: {size} bytes")
+        return data
+        
+    elif input_type == 8:
+        # DEADBEEF pattern
+        pattern = b'\xDE\xAD\xBE\xEF'
+        repeats = random.randint(1, 64)
+        data = pattern * repeats
+        print(f"[RANDOM INPUT] DEADBEEF pattern: {len(data)} bytes")
+        return data
+        
+    elif input_type == 9:
+        # Random memory address (user-mode range)
+        addresses = [0x400000, 0x10000000, 0x7FFE0000, 0x77000000, 0x7C800000]
+        base = random.choice(addresses)
+        offset = random.randint(0, 0xFFFF)
+        addr = base + offset
+        print(f"[RANDOM INPUT] Memory address: 0x{addr:08X}")
+        return addr
+        
+    elif input_type == 10:
+        # Windows error codes
+        error_codes = [0, 2, 5, 6, 87, 122, 123, 1, 3, 4, 32, 183, 267]
+        code = random.choice(error_codes)
+        print(f"[RANDOM INPUT] Windows error code: {code}")
+        return code
+        
+    elif input_type == 11:
+        # Random GUID-like structure
+        guid_bytes = os.urandom(16)
+        print(f"[RANDOM INPUT] GUID-like: {guid_bytes.hex()}")
+        return guid_bytes
+        
+    elif input_type == 12:
+        # Registry path strings
+        paths = [
+            "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows",
+            "HKEY_CURRENT_USER\\Software\\Microsoft",
+            "HKLM\\SYSTEM\\CurrentControlSet\\Services",
+            "HKCU\\Control Panel\\Desktop"
+        ]
+        path = random.choice(paths)
+        print(f"[RANDOM INPUT] Registry path: '{path}'")
+        return path
+        
+    elif input_type == 13:
+        # Network-like data (IP addresses, ports)
+        if random.random() < 0.5:
+            ip = f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
+            print(f"[RANDOM INPUT] IP address: '{ip}'")
+            return ip
+        else:
+            port = random.randint(1, 65535)
+            print(f"[RANDOM INPUT] Port number: {port}")
+            return port
+            
+    elif input_type == 14:
+        # Timestamp data
+        timestamps = [
+            int(time.time()),  # Current time
+            0,  # Epoch
+            random.randint(946684800, 2147483647),  # Random time between 2000-2038
+            0x7FFFFFFF,  # Max 32-bit timestamp
+        ]
+        ts = random.choice(timestamps)
+        print(f"[RANDOM INPUT] Timestamp: {ts}")
+        return ts
+        
+    elif input_type == 15:
+        # Windows handle values
+        handles = [0, 0xFFFFFFFF, 0x80000000, random.randint(1, 0xFFFF)]
+        handle = random.choice(handles)
+        print(f"[RANDOM INPUT] Handle value: 0x{handle:08X}")
+        return handle
+        
+    elif input_type == 16:
+        # File paths
+        paths = [
+            r"C:\Windows\System32",
+            r"C:\Program Files",
+            r"C:\Users\Public",
+            r"\\.\pipe\mypipe",
+            r"\\?\C:\test",
+            r"C:\$Recycle.Bin"
+        ]
+        path = random.choice(paths)
+        print(f"[RANDOM INPUT] File path: '{path}'")
+        return path
+        
+    elif input_type == 17:
+        # Structured data (like Windows RECT, POINT, etc.)
+        struct_data = struct.pack('<IIII', 
+                                 random.randint(0, 1920),  # x
+                                 random.randint(0, 1080),  # y  
+                                 random.randint(0, 1920),  # width
+                                 random.randint(0, 1080))  # height
+        print(f"[RANDOM INPUT] Structured data (RECT-like): {len(struct_data)} bytes")
+        return struct_data
+        
+    elif input_type == 18:
+        # Dolboyob integration
+        try:
+            dolboyob_instance = dolboyob.долбоёб()
+            dolboyob_data = dolboyob_instance.хуй(None)
+            if dolboyob_data:
+                if isinstance(dolboyob_data, str):
+                    data = dolboyob_data.encode('utf-8', errors='ignore')
+                else:
+                    data = bytes(dolboyob_data)
+                print(f"[RANDOM INPUT] Dolboyob data: {len(data)} bytes")
+                return data
+        except:
+            pass
+        # Fallback
+        data = os.urandom(random.randint(16, 256))
+        print(f"[RANDOM INPUT] Dolboyob fallback: {len(data)} bytes")
+        return data
+        
+    elif input_type == 19:
+        # Large integer (64-bit)
+        value = random.getrandbits(64)
+        print(f"[RANDOM INPUT] Large integer: {value} (0x{value:016X})")
+        return value
+        
+    elif input_type == 20:
+        # Specific file chunk with exact offset (like user's example)
+        target_files = [
+            (r"C:\Windows\explorer.exe", "explorer.exe"),
+            (r"C:\Intel\Thunderbolt\setup.exe", "setup.exe"),
+            (r"C:\Windows\System32\kernel32.dll", "kernel32.dll"),
+        ]
+        
+        file_path, file_name = random.choice(target_files)
+        try:
+            if os.path.exists(file_path):
+                # Use specific sizes like in user's examples
+                sizes = [42, 67*1024, 128, 1024, 4096]  # Including 67KB and 42 bytes
+                offsets = [69, 0, 100, 256, 512, 1024]  # Including offset 69
+                
+                chunk_size = random.choice(sizes)
+                offset = random.choice(offsets)
+                
+                file_size = os.path.getsize(file_path)
+                if offset < file_size:
+                    actual_size = min(chunk_size, file_size - offset)
+                    with open(file_path, 'rb') as f:
+                        f.seek(offset)
+                        data = f.read(actual_size)
+                    print(f"[RANDOM INPUT] {len(data)} bytes from {file_name} at offset {offset}")
+                    return data
+        except:
+            pass
+            
+        # Fallback
+        data = os.urandom(random.randint(32, 1024))
+        print(f"[RANDOM INPUT] File chunk fallback: {len(data)} bytes")
+        return data
+        
+    elif input_type == 21:
+        # Random boolean-like values
+        values = [0, 1, True, False]
+        value = random.choice(values)
+        print(f"[RANDOM INPUT] Boolean-like: {value}")
+        return value
+        
+    elif input_type == 22:
+        # Array-like data
+        element_count = random.randint(1, 16)
+        elements = [random.randint(0, 0xFFFF) for _ in range(element_count)]
+        array_data = struct.pack(f'<{element_count}H', *elements)
+        print(f"[RANDOM INPUT] Array data: {element_count} elements, {len(array_data)} bytes")
+        return array_data
+        
+    elif input_type == 23:
+        # Random string from predefined pool (like user's example)
+        strings = [
+            "tlasjfdlksjfokjaswoefjslfjape4p",  # User's example
+            "randomstringdata123456789",
+            "abcdefghijklmnopqrstuvwxyz",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "1234567890!@#$%^&*()",
+            "testdataforDLLexecution",
+            "chaos_dll_random_string",
+        ]
+        string = random.choice(strings)
+        print(f"[RANDOM INPUT] Predefined string: '{string}'")
+        return string
+        
+    elif input_type == 24:
+        # Random small buffer (typical for many APIs)
+        size = random.choice([1, 2, 4, 8, 16, 32])
+        data = os.urandom(size)
+        print(f"[RANDOM INPUT] Small buffer: {size} bytes: {data.hex()}")
+        return data
+        
+    else:  # input_type == 25
+        # Mixed/composite data
+        parts = []
+        for _ in range(random.randint(2, 5)):
+            part_size = random.randint(4, 32)
+            parts.append(os.urandom(part_size))
+        data = b''.join(parts)
+        print(f"[RANDOM INPUT] Composite data: {len(data)} bytes from {len(parts)} parts")
+        return data
+
+def convert_to_ctypes(input_data):
+    """Convert randomized input data to appropriate ctypes argument"""
+    if isinstance(input_data, bytes):
+        # Convert bytes to string buffer
+        if len(input_data) > 0:
+            return ctypes.create_string_buffer(input_data)
+        else:
+            return ctypes.c_void_p(0)
+    elif isinstance(input_data, str):
+        # Convert string to char pointer
+        try:
+            return ctypes.c_char_p(input_data.encode('utf-8', errors='ignore'))
+        except:
+            return ctypes.c_void_p(0)
+    elif isinstance(input_data, int):
+        # Convert integer to appropriate size
+        if -2**31 <= input_data <= 2**31-1:
+            return ctypes.c_int(input_data)
+        elif 0 <= input_data <= 2**32-1:
+            return ctypes.c_uint32(input_data)
+        elif 0 <= input_data <= 2**64-1:
+            return ctypes.c_uint64(input_data)
+        else:
+            return ctypes.c_void_p(input_data & 0xFFFFFFFFFFFFFFFF)
+    elif isinstance(input_data, float):
+        return ctypes.c_double(input_data)
+    elif isinstance(input_data, bool):
+        return ctypes.c_bool(input_data)
+    else:
+        # Fallback for unknown types
+        return ctypes.c_void_p(random.randint(0, 0xFFFFFFFF))
+
 def child_worker(path_str, func_name, iterations, max_args, max_buf, seed, files_list):
+    """Enhanced child worker with comprehensive randomized input generation"""
     random.seed(seed)
     path = Path(path_str)
     if PREPEND_DLL_DIR_TO_PATH:
         os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+    
+    print(f"[CHILD WORKER] Starting worker for function: {func_name} from {path_str}")
+    
     try:
         lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
     except Exception:
+        print(f"[DLL ERROR] Failed to load DLL: {path_str}")
         return
     try:
         fn = getattr(lib, func_name)
     except Exception:
+        print(f"[FUNCTION ERROR] Failed to get function: {func_name}")
         return
-    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])  # random restype for more chaos
+    
+    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])
+    print(f"[FUNCTION] Loaded {func_name} with random return type")
 
-    bufs = []
-    for _ in range(64):  # more buffers
-        sz = random.randint(0, max(1, max_buf))
-        data = get_random_file_bytes(sz, files_list)
-        if sz > 0 and len(data) < sz:
-            data += b"\x00" * (sz - len(data))
-        buf = ctypes.create_string_buffer(data)
-        bufs.append(buf)
+    call_count = 0
+    success_count = 0
+    error_count = 0
 
     while True:  # infinite loop for maximum calls
-        nargs = random.randint(0, max_args)
+        call_count += 1
+        nargs = random.randint(0, min(max_args, 10))  # Limit to reasonable number for logging
+        
+        print(f"[CALL {call_count}] Generating {nargs} randomized arguments for {func_name}")
+        
         args = []
-        for __ in range(nargs):
-            kind = random.randint(0, 12)  # Extended with dolboyob types
-            if kind == 0:
-                args.append(ctypes.c_uint64(random.getrandbits(64)))
-            elif kind == 1:
-                args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
-            elif kind == 2:
-                args.append(ctypes.c_void_p(0))  # NULL
-            elif kind == 3:
-                b = random.choice(bufs)
-                args.append(ctypes.cast(b, ctypes.c_void_p))
-            elif kind == 4:
-                b = random.choice(bufs)
-                pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
-                args.append(ctypes.cast(pptr, ctypes.c_void_p))
-            elif kind == 5:
-                args.append(ctypes.c_double(random.uniform(-1e12, 1e12)))
-            elif kind == 6:
-                sz = random.randint(0, 4096)
-                s = get_random_file_bytes(sz, files_list)
-                args.append(ctypes.c_char_p(s))
-            elif kind == 7:
-                s = ''.join(chr(random.randint(0, 0x10FFFF)) for _ in range(random.randint(0, 1024)))
-                args.append(ctypes.c_wchar_p(s))
-            elif kind == 8:
-                args.append(ctypes.c_int(random.getrandbits(32) - (1 << 31)))
-            elif kind == 9:
-                args.append(ctypes.c_void_p(random.getrandbits(64)))  # random pointer
-            elif kind == 10:
-                # Simple dolboyob integration - string as char pointer
-                try:
-                    dolboyob_instance = dolboyob.долбоёб()
-                    dolboyob_string = dolboyob_instance.хуй(None)
-                    if dolboyob_string and isinstance(dolboyob_string, str):
-                        dolboyob_bytes = dolboyob_string.encode('utf-8', errors='ignore')
-                        args.append(ctypes.c_char_p(dolboyob_bytes))
-                    else:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                except:
-                    args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-            elif kind == 11:
-                # Simple dolboyob integration - data as buffer
-                try:
-                    dolboyob_instance = dolboyob.долбоёб()
-                    dolboyob_data = dolboyob_instance.хуй(None)
-                    if dolboyob_data:
-                        if isinstance(dolboyob_data, str):
-                            raw_bytes = dolboyob_data.encode('utf-8', errors='ignore')
-                        else:
-                            raw_bytes = bytes(dolboyob_data)
-                        dolboyob_buf = ctypes.create_string_buffer(raw_bytes)
-                        args.append(ctypes.cast(dolboyob_buf, ctypes.c_void_p))
-                    else:
-                        args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-                except:
-                    args.append(ctypes.c_void_p(random.randint(0, 0xFFFFFFFF)))
-            else:
-                # Random value fallback
-                args.append(ctypes.c_void_p(random.getrandbits(64)))
+        for i in range(nargs):
+            # Generate comprehensive randomized input
+            input_data = generate_randomized_input(files_list)
+            
+            # Convert to ctypes argument
+            try:
+                converted_arg = convert_to_ctypes(input_data)
+                args.append(converted_arg)
+                
+                # Log argument details (truncate long data for readability)
+                if isinstance(input_data, bytes):
+                    preview = input_data[:50].hex() if len(input_data) > 50 else input_data.hex()
+                    print(f"  Arg {i}: Buffer ({len(input_data)} bytes): {preview}...")
+                elif isinstance(input_data, str):
+                    preview = input_data[:50] + "..." if len(input_data) > 50 else input_data
+                    print(f"  Arg {i}: String: '{preview}'")
+                else:
+                    print(f"  Arg {i}: {type(input_data).__name__}: {input_data}")
+                    
+            except Exception as e:
+                print(f"  Arg {i}: Conversion error: {e}, using NULL")
+                args.append(ctypes.c_void_p(0))
+        
+        # Execute the function call
         try:
-            _ = fn(*args)
-        except Exception:
-            pass  # child can crash/hang; orchestrator will replace it
+            print(f"[EXECUTING] Calling {func_name} with {len(args)} arguments...")
+            result = fn(*args)
+            success_count += 1
+            if call_count % 100 == 0:
+                print(f"[PROGRESS] {func_name}: {call_count} calls, {success_count} success, {error_count} errors")
+        except Exception as e:
+            error_count += 1
+            if call_count % 100 == 0:
+                print(f"[ERROR] {func_name} call failed: {str(e)[:100]}...")
+                print(f"[PROGRESS] {func_name}: {call_count} calls, {success_count} success, {error_count} errors")
 
 # --- orchestration ---
 def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
