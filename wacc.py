@@ -46,9 +46,9 @@ current_target_files = 0
 last_param_randomize_time = 0
 
 # --- TIMING CONTROLS ---
-SHUFFLE_INTERVAL_SEC = 3                     # shuffle DLL/function array every 12 seconds
-RANDOMIZE_INTERVAL_SEC = 5                   # re-randomize parameter data every 13 seconds
-EXECUTION_BATCH_SIZE = 101                     # execute 10 functions in parallel
+SHUFFLE_INTERVAL_SEC = 33                     # shuffle DLL/function array every 12 seconds
+RANDOMIZE_INTERVAL_SEC = 30                   # re-randomize parameter data every 13 seconds
+EXECUTION_BATCH_SIZE = 10                     # execute 10 functions in parallel
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
