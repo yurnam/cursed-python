@@ -14,7 +14,7 @@ WORKERS              = 214                      # parallel child processes for f
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 2                     # 30 second timeout per child process
+CHILD_TIMEOUT_SEC    = 20                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
@@ -24,11 +24,11 @@ SCAN_TIME_BUDGET_SEC = 120.0                    # time budget for DLL scanning
 MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
 MAX_SCAN_DEPTH       = 900                      # max subdirectory depth for DLL scanning
-TARGET_FILES         = 1000                   # max files to scan for random data
+TARGET_FILES         = 10000                   # max files to scan for random data
 
 # --- TIMING CONTROLS ---
-SHUFFLE_INTERVAL_SEC = 1.2                     # shuffle DLL/function array every 12 seconds
-RANDOMIZE_INTERVAL_SEC = 1.3                   # re-randomize parameter data every 13 seconds
+SHUFFLE_INTERVAL_SEC = 3                     # shuffle DLL/function array every 12 seconds
+RANDOMIZE_INTERVAL_SEC = 5                   # re-randomize parameter data every 13 seconds
 EXECUTION_BATCH_SIZE = 101                     # execute 10 functions in parallel
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
@@ -619,6 +619,7 @@ def enumerate_all_dll_functions():
     
     print(f"[ENUMERATION] Complete! Found {total_functions} functions across {len(dlls)} DLLs")
     print(f"[ENUMERATION] Sample functions: {dll_function_array[:5]}")
+    time.sleep(10)
 
 def shuffle_dll_function_array():
     """Shuffle the DLL/function array every 12 seconds"""
@@ -626,10 +627,9 @@ def shuffle_dll_function_array():
     current_time = time.time()
     
     if current_time - last_shuffle_time >= SHUFFLE_INTERVAL_SEC:
-        print(f"[SHUFFLE] Shuffling {len(dll_function_array)} DLL functions...")
         random.shuffle(dll_function_array)
         last_shuffle_time = current_time
-        print(f"[SHUFFLE] Complete! Next shuffle in {SHUFFLE_INTERVAL_SEC} seconds")
+
 
 def prepare_parameter_sets(files_list):
     """Prepare 10 sets of randomized parameter data, re-randomize every 13 seconds"""
@@ -637,7 +637,6 @@ def prepare_parameter_sets(files_list):
     current_time = time.time()
     
     if current_time - last_randomize_time >= RANDOMIZE_INTERVAL_SEC:
-        print(f"[RANDOMIZE] Preparing {EXECUTION_BATCH_SIZE} sets of randomized parameters...")
         current_parameter_sets = []
         
         for i in range(EXECUTION_BATCH_SIZE):
@@ -686,7 +685,8 @@ def execute_single_function(dll_path, func_name, param_set, files_list):
         
         # Execute function
         result = fn(*args)
-        print(f"[EXECUTE] {func_name} returned: {result}")
+        # what can we do silly with the result ?
+
         return True
         
     except Exception as e:
@@ -706,9 +706,6 @@ def parallel_function_executor(files_list):
     
     # Select 10 functions from the array
     functions_to_execute = dll_function_array[:EXECUTION_BATCH_SIZE]
-    
-    print(f"[PARALLEL] Starting parallel execution of {EXECUTION_BATCH_SIZE} functions...")
-    
     # Create processes for parallel execution
     processes = []
     for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, current_parameter_sets)):
@@ -735,7 +732,6 @@ def parallel_function_executor(files_list):
         
         proc.join(timeout=remaining_time)
         if proc.is_alive():
-            print(f"[TIMEOUT] {func_name} timed out, terminating...")
             proc.terminate()
             proc.join(timeout=1)
             if proc.is_alive():
@@ -745,7 +741,6 @@ def parallel_function_executor(files_list):
             completed += 1
     
     execution_time = time.time() - start_time
-    print(f"[PARALLEL] Batch complete: {completed} succeeded, {timeout_count} timed out in {execution_time:.2f}s")
 
 # --- orchestration ---
 
@@ -793,9 +788,6 @@ def orchestrate():
     while time.time() - start_time < TOTAL_DURATION_SEC:
         execution_cycle += 1
         cycle_start = time.time()
-        
-        print(f"\n[CYCLE {execution_cycle}] ===== Starting execution cycle =====")
-        
         # 1. Check and shuffle DLL function array if needed (every 12 seconds)
         shuffle_dll_function_array()
         
@@ -807,13 +799,10 @@ def orchestrate():
         
         cycle_time = time.time() - cycle_start
         elapsed_total = time.time() - start_time
-        
-        print(f"[CYCLE {execution_cycle}] Completed in {cycle_time:.2f}s. Total elapsed: {elapsed_total:.2f}s")
-        
+
         # Brief pause before next cycle to prevent excessive CPU usage
         time.sleep(0.1)
     
-    print(f"[COMPLETE] Fuzzing completed after {execution_cycle} cycles")
 
 def main():
     mp.freeze_support()
