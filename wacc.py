@@ -71,6 +71,9 @@ def randomize_parameters():
     current_time = time.time()
     
     if current_time - last_param_randomize_time >= PARAM_RANDOMIZE_INTERVAL_SEC:
+        # Store old ROOT_DIR to detect changes
+        old_root_dir = current_root_dir
+        
         # ROOT_DIR: randomly select one from the list
         current_root_dir = random.choice(ROOT_DIR_LIST)
         
@@ -107,6 +110,11 @@ def randomize_parameters():
         print(f"[PARAM_RANDOMIZE] MAX_SCAN_DEPTH: {current_max_scan_depth}")
         print(f"[PARAM_RANDOMIZE] TARGET_FILES: {current_target_files}")
         print(f"[PARAM_RANDOMIZE] Next randomization in {PARAM_RANDOMIZE_INTERVAL_SEC} seconds")
+        
+        # Return True if ROOT_DIR changed (triggers re-enumeration)
+        return old_root_dir != current_root_dir
+    
+    return False
 
 # ============================================================================
 
@@ -844,7 +852,7 @@ def orchestrate():
     print(f"[CONFIG] Available ROOT_DIRs: {ROOT_DIR_LIST}")
 
     # Initialize parameters for first time
-    randomize_parameters()
+    randomize_parameters()  # This will always return False on first run
 
     # Get files for random data using current randomized ROOT_DIR
     files = []
@@ -879,7 +887,19 @@ def orchestrate():
         cycle_start = time.time()
         
         # 0. Check and randomize parameters if needed
-        randomize_parameters()
+        root_dir_changed = randomize_parameters()
+        
+        # Re-enumerate DLL functions if ROOT_DIR changed
+        if root_dir_changed:
+            print("[PARAM_RANDOMIZE] ROOT_DIR changed - re-enumerating DLL functions...")
+            enumerate_all_dll_functions()
+            # Also refresh files list for new directory
+            try:
+                files = scan_random_files(current_root_dir)
+                if files:
+                    print(f"[PARAM_RANDOMIZE] Found {len(files)} files in new ROOT_DIR")
+            except:
+                pass
         
         # 1. Check and shuffle DLL function array if needed (every 12 seconds)
         shuffle_dll_function_array()
