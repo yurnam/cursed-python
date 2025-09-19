@@ -11,12 +11,12 @@ import regi
 import dolboyob
 # ==== HARD-CODED CONFIG (your values) ========================================
 ROOT_DIR             = r"C:\Windows"   # Scan Windows dir for DLLs.
-WORKERS              = 100                     # parallel child processes (maintain this number)
+WORKERS              = 20                     # parallel child processes (maintain this number)
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
-CALLS_PER_CHILD      = 100                   # but made infinite in child
-MAX_ARGS_PER_CALL    = 255                     # 0..N args
+CALLS_PER_CHILD      = 10                   # but made infinite in child
+MAX_ARGS_PER_CALL    = 25                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 360                    # 1 hour, kill after this
+CHILD_TIMEOUT_SEC    = 15                    # 1 hour, kill after this
 SCAN_LIMIT_DLLS      = 1000                  # (legacy cap; fast scanner uses TARGET_DLLS/time budget)
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
@@ -768,12 +768,4 @@ def main():
     print("[+] Done.")
 
 if __name__ == "__main__":
-    dolboyobthread = threading.Thread(target=dolboyob.main, daemon=True)
-    waccthread = threading.Thread(target=main, daemon=True)
-    regithread = threading.Thread(target=regi.main, daemon=True)
-    waccthread.start()
-    regithread.start()
-    dolboyobthread.start()
-    waccthread.join()
-    regithread.join()
-    dolboyobthread.join()
+    main()
