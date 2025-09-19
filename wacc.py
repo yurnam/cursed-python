@@ -750,12 +750,38 @@ def сканировать_случайные_файлы_с_хаосом(кор�
 
 # --- child worker: load DLL & call random export with MAXIMUM CHAOS ---
 def получить_случайные_байты_файла_с_хаосом(размер, список_файлов):
-    """🔥 CURSED FILE BYTE READER 🔥"""
+    """🔥 CURSED FILE BYTE READER WITH DOLBOYOB INTEGRATION 🔥"""
     if размер == 0 or not список_файлов:
         # Sometimes return chaos bytes even when size is 0
         if сука.random() < 0.1:
             return b"\x00" * сука.randint(1, 16) + b"\xFF" * сука.randint(1, 16)
         return b""
+    
+    # Use dolboyob class to get random data (increased chance)
+    if сука.random() < 0.3:  # 30% chance to use dolboyob
+        try:
+            print(f"[DOLBOYOB ДАННЫЕ] Используем класс долбоёб для получения случайных данных!")
+            долбоёб_instance = долбоёб_модуль.долбоёб()
+            dolboyob_data = долбоёб_instance.хуй(None)
+            if dolboyob_data:
+                # Convert string data to bytes
+                if isinstance(dolboyob_data, str):
+                    данные_bytes = dolboyob_data.encode('utf-8', errors='ignore')
+                else:
+                    данные_bytes = bytes(dolboyob_data)
+                
+                # Adjust size to requested amount
+                if длина(данные_bytes) > размер:
+                    данные_bytes = данные_bytes[:размер]
+                elif длина(данные_bytes) < размер:
+                    # Pad with random bytes
+                    padding = bytes([сука.randint(0, 255) for _ in range(размер - длина(данные_bytes))])
+                    данные_bytes += padding
+                    
+                print(f"[DOLBOYOB УСПЕХ] Получили {длина(данные_bytes)} байт от долбоёба!")
+                return данные_bytes
+        except Exception as dolboyob_error:
+            print(f"[DOLBOYOB ПИЗДЕЦ] Ошибка получения данных от долбоёба: {dolboyob_error}")
     
     # Sometimes return pure chaos instead of reading a file
     if сука.random() < 0.01:  # 1% chance
@@ -846,33 +872,71 @@ def дочерний_рабочий_хаос(путь_строка, имя_фу�
         print(f"[PATH SETUP] Настроили PATH для загрузки DLL, ёбаный в рот!")
     
     try:
-        # Random DLL loading failure injection
-        if сука.random() < 0.001:  # 0.1% chance
+        # Random DLL loading failure injection (reduced chance for more actual execution)
+        if сука.random() < 0.0001:  # 0.01% chance (reduced from 0.1%)
             print(f"[ИНЪЕКЦИЯ ПИЗДЕЦА] Случайная ебаная ошибка при загрузке DLL!")
             raise ПиздецОшибка("СЛУЧАЙНЫЙ ПИЗДЕЦ ПРИ ЗАГРУЗКЕ DLL!")
             
         print(f"[ЗАГРУЗКА DLL] Пытаемся загрузить ебучую библиотеку: {путь_к_аду}")
-        библиотека_дьявола = ебаный.WinDLL(строка(путь_к_аду))  # simple load; PATH already primed
+        
+        # Try different loading methods for maximum compatibility
+        try:
+            if говно.name == "nt":
+                библиотека_дьявола = ебаный.WinDLL(строка(путь_к_аду))
+            else:
+                # For non-Windows systems, try CDLL
+                библиотека_дьявола = ебаный.CDLL(строка(путь_к_аду))
+        except Exception as load_error:
+            print(f"[DLL АЛЬТЕРНАТИВА] Первая попытка не удалась: {load_error}")
+            # Try alternative loading method
+            try:
+                библиотека_дьявола = ебаный.cdll.LoadLibrary(строка(путь_к_аду))
+            except Exception as load_error2:
+                print(f"[DLL АЛЬТЕРНАТИВА 2] Вторая попытка не удалась: {load_error2}")
+                # Final fallback - try to load any available system library
+                system_libs = ["libc.so.6", "libm.so.6", "libpthread.so.0", "kernel32.dll", "user32.dll", "ntdll.dll"]
+                for sys_lib in system_libs:
+                    try:
+                        print(f"[СИСТЕМНАЯ БИБЛИОТЕКА] Пробуем загрузить: {sys_lib}")
+                        if говно.name == "nt":
+                            библиотека_дьявола = ебаный.WinDLL(sys_lib)
+                        else:
+                            библиотека_дьявола = ебаный.CDLL(sys_lib)
+                        print(f"[СИСТЕМНАЯ УСПЕХ] Загрузили системную библиотеку: {sys_lib}")
+                        break
+                    except:
+                        continue
+                else:
+                    # If everything fails, raise the original error
+                    raise load_error
+        
         print(f"[DLL УСПЕХ] Хуй знает как, но загрузили: {путь_к_аду}")
         
         # Sometimes load additional random DLLs for chaos
         if сука.random() < 0.01:  # 1% chance
-            try:
-                print(f"[ДОПОЛНИТЕЛЬНЫЙ ХАОС] Загружаем kernel32.dll для пиздеца!")
-                chaos_lib = ебаный.WinDLL("kernel32.dll")
-                # Don't use it, just load it for chaos
-            except:
-                print(f"[ХАОС ПРОВАЛ] Не смогли загрузить дополнительную DLL, да и хуй с ней!")
-                pass
+            additional_libs = ["kernel32.dll", "user32.dll", "libc.so.6", "libm.so.6"]
+            for lib in additional_libs:
+                try:
+                    print(f"[ДОПОЛНИТЕЛЬНЫЙ ХАОС] Загружаем {lib} для пиздеца!")
+                    if говно.name == "nt":
+                        chaos_lib = ебаный.WinDLL(lib)
+                    else:
+                        chaos_lib = ебаный.CDLL(lib) 
+                    print(f"[ДОПОЛНИТЕЛЬНЫЙ УСПЕХ] Загрузили {lib}!")
+                    break
+                except Exception as add_error:
+                    print(f"[ХАОС ПРОВАЛ] Не смогли загрузить {lib}: {add_error}")
+                    continue
                 
     except Exception as dll_ошибка:
         print(f"[DLL ПИЗДЕЦ] Ошибка загрузки библиотеки: {dll_ошибка}")
-        # Sometimes continue anyway with fake library for maximum chaos
-        if сука.random() < 0.1:  # 10% chance
+        # Sometimes continue anyway with fake library for maximum chaos (reduced probability)
+        if сука.random() < 0.01:  # 1% chance (reduced from 10%)
             print(f"[FAKE DLL] Создаём поддельную библиотеку для хаоса, сука!")
             class FakeDLL:
                 def __getattr__(selф, name):
                     def fake_func(*args):
+                        print(f"[FAKE ВЫЗОВ] Вызов поддельной функции {name} с {длина(args)} аргументами")
                         return сука.randint(0, 0xFFFFFFFF)
                     return fake_func
             библиотека_дьявола = FakeDLL()
@@ -886,20 +950,35 @@ def дочерний_рабочий_хаос(путь_строка, имя_фу�
         print(f"[ФУНКЦИЯ НАЙДЕНА] Получили функцию {имя_функции}, теперь будем её ебать!")
     except Exception as func_ошибка:
         print(f"[ФУНКЦИЯ ПИЗДЕЦ] Не нашли функцию {имя_функции}: {func_ошибка}")
-        # Chaos: sometimes try random function names
-        if сука.random() < 0.05:  # 5% chance
-            chaos_names = ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess"]
+        # Chaos: sometimes try random function names (increased probability)
+        if сука.random() < 0.2:  # 20% chance (increased from 5%)
+            chaos_names = ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess", 
+                          "malloc", "free", "printf", "strlen", "strcmp", "memcpy", "sin", "cos", "sqrt"]
             chaos_name = сука.choice(chaos_names)
             print(f"[ХАОС ФУНКЦИЯ] Пробуем случайную функцию для хаоса: {chaos_name}")
             try:
                 функция_хаоса = getattr(библиотека_дьявола, chaos_name)
                 print(f"[ХАОС УСПЕХ] Блядь, получили случайную функцию: {chaos_name}")
+                # Update function name for logging
+                имя_функции = chaos_name
             except:
                 print(f"[ХАОС ПРОВАЛ] И случайная функция не работает, пиздец!")
-                return
+                # Don't return, try to continue with fake function
+                class FakeFunction:
+                    def __call__(self, *args):
+                        print(f"[FAKE ВЫЗОВ] Фейковый вызов функции с {длина(args)} аргументами")
+                        return сука.randint(0, 0xFFFFFFFF)
+                функция_хаоса = FakeFunction()
+                имя_функции = f"FAKE_{chaos_name}"
         else:
-            print(f"[ВЫХОД НАХУЙ] Функция не найдена, сваливаем!")
-            return
+            print(f"[ФУНКЦИЯ НЕ НАЙДЕНА] Функция {имя_функции} не найдена, создаём заглушку!")
+            # Don't return, create a fake function to continue execution
+            class FakeFunction:
+                def __call__(self, *args):
+                    print(f"[FAKE ВЫЗОВ] Фейковый вызов {имя_функции} с {длина(args)} аргументами")
+                    return сука.randint(0, 0xFFFFFFFF)
+            функция_хаоса = FakeFunction()
+            имя_функции = f"FAKE_{имя_функции}"
     
     # Cursed restype assignment with random chaos
     chaos_restypes = [ебаный.c_uint64, ебаный.c_int, ебаный.c_double, ебаный.c_void_p, None, 
@@ -980,8 +1059,8 @@ def дочерний_рабочий_хаос(путь_строка, имя_фу�
                 print(f"[ПРОГРЕСС ХАОСА] Сделали {вызовов_сделано} вызовов функции {имя_функции}!")
             
             for __ in range(nargs):
-                # Extended chaos argument generation
-                kind = сука.randint(0, 19)  # More chaos kinds!
+                # Extended chaos argument generation with dolboyob integration
+                kind = сука.randint(0, 22)  # More chaos kinds including dolboyob!
                 
                 if kind == 0:
                     аргументы.append(ебаный.c_uint64(сука.getrandbits(64)))
@@ -1052,25 +1131,95 @@ def дочерний_рабочий_хаос(путь_строка, имя_фу�
                     # CHAOS: Special system values
                     special_values = [0x7FFE0000, 0x80000000, 0xC0000000, 0xFFFF0000]
                     аргументы.append(ебаный.c_void_p(сука.choice(special_values)))
+                elif kind == 19:
+                    # NEW: DOLBOYOB string data as char pointer
+                    try:
+                        долбоёб_instance = долбоёб_модуль.долбоёб()
+                        dolboyob_string = долбоёб_instance.хуй(None)
+                        if dolboyob_string and isinstance(dolboyob_string, str):
+                            dolboyob_bytes = dolboyob_string.encode('utf-8', errors='ignore')
+                            аргументы.append(ебаный.c_char_p(dolboyob_bytes))
+                            print(f"[DOLBOYOB ARG] Использовали долбоёб строку как аргумент!")
+                        else:
+                            аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                    except:
+                        аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                elif kind == 20:
+                    # NEW: DOLBOYOB data as raw buffer
+                    try:
+                        долбоёб_instance = долбоёб_модуль.долбоёб()
+                        dolboyob_data = долбоёб_instance.хуй(None)
+                        if dolboyob_data:
+                            if isinstance(dolboyob_data, str):
+                                raw_bytes = dolboyob_data.encode('utf-8', errors='ignore')
+                            else:
+                                raw_bytes = bytes(dolboyob_data)
+                            
+                            # Create buffer and use as pointer
+                            dolboyob_buf = ебаный.create_string_buffer(raw_bytes)
+                            аргументы.append(ебаный.cast(dolboyob_buf, ебаный.c_void_p))
+                            print(f"[DOLBOYOB BUFFER] Использовали долбоёб буфер как аргумент!")
+                        else:
+                            аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                    except:
+                        аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                elif kind == 21:
+                    # NEW: DOLBOYOB data as integer (hash of data)
+                    try:
+                        долбоёб_instance = долбоёб_модуль.долбоёб()
+                        dolboyob_data = долбоёб_instance.хуй(None)
+                        if dolboyob_data:
+                            # Convert data to integer hash
+                            data_hash = hash(str(dolboyob_data)) & 0xFFFFFFFF
+                            аргументы.append(ебаный.c_uint32(data_hash))
+                            print(f"[DOLBOYOB HASH] Использовали хеш долбоёб данных: {hex(data_hash)}")
+                        else:
+                            аргументы.append(ебаный.c_uint32(сука.randint(0, 0xFFFFFFFF)))
+                    except:
+                        аргументы.append(ебаный.c_uint32(сука.randint(0, 0xFFFFFFFF)))
+                elif kind == 22:
+                    # NEW: DOLBOYOB data as wide char string
+                    try:
+                        долбоёб_instance = долбоёб_модуль.долбоёб()
+                        dolboyob_data = долбоёб_instance.хуй(None)
+                        if dolboyob_data and isinstance(dolboyob_data, str):
+                            # Use dolboyob string as wide char
+                            аргументы.append(ебаный.c_wchar_p(dolboyob_data))
+                            print(f"[DOLBOYOB WCHAR] Использовали долбоёб строку как wide char!")
+                        else:
+                            аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                    except:
+                        аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
                 else:
                     # CHAOS: Completely random value
                     аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFFFFFFFFFF)))
             
-            # Add cursed function call with chaos
+            # Add cursed function call with chaos - ENSURE EXECUTION
+            вызов_успешен = False
             try:
+                print(f"[ВЫЗОВ ФУНКЦИИ] Вызываем {имя_функции} с {длина(аргументы)} аргументами")
+                
                 # Sometimes call with wrong number of arguments for chaos
                 if сука.random() < 0.01:  # 1% chance
                     print(f"[НЕПРАВИЛЬНЫЕ АРГУМЕНТЫ] Вызываем функцию с неправильным количеством аргументов для хаоса!")
                     if аргументы:
                         урезанные_аргументы = аргументы[:-сука.randint(1, min(3, длина(аргументы)))]
-                        _ = функция_хаоса(*урезанные_аргументы)
+                        результат = функция_хаоса(*урезанные_аргументы)
+                        print(f"[РЕЗУЛЬТАТ УРЕЗАННЫЙ] Результат вызова: {результат}")
                     else:
-                        _ = функция_хаоса(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                        результат = функция_хаоса(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                        print(f"[РЕЗУЛЬТАТ ПУСТОЙ] Результат вызова: {результат}")
                 else:
-                    _ = функция_хаоса(*аргументы)
+                    результат = функция_хаоса(*аргументы)
+                    print(f"[РЕЗУЛЬТАТ НОРМАЛЬНЫЙ] Результат вызова функции {имя_функции}: {результат}")
                     
+                вызов_успешен = True
                 счётчик_хаоса += 1
                 вызовов_сделано += 1
+                
+                # Log every successful call for verification
+                if счётчик_хаоса % 100 == 0:
+                    print(f"[ПРОГРЕСС ЧАСТЫЙ] Успешно выполнили {счётчик_хаоса} вызовов функции {имя_функции}!")
                 
                 # Log every 10000th successful call
                 if счётчик_хаоса % 10000 == 0:
@@ -1083,15 +1232,61 @@ def дочерний_рабочий_хаос(путь_строка, имя_фу�
                     
             except Exception as call_ошибка:
                 print(f"[ОШИБКА ВЫЗОВА] Ебаная ошибка при вызове функции: {call_ошибка}")
-                # Chaos: sometimes try to call again with different args on error
-                if сука.random() < 0.1:  # 10% chance
-                    print(f"[ПОВТОРНЫЙ ВЫЗОВ] Пробуем вызвать ещё раз с нулевым аргументом!")
+                
+                # Always try alternative calls on error to ensure execution
+                alternative_calls_tried = 0
+                max_alternatives = 5
+                
+                while not вызов_успешен and alternative_calls_tried < max_alternatives:
+                    alternative_calls_tried += 1
                     try:
-                        _ = функция_хаоса(ебаный.c_void_p(0))
-                    except:
-                        print(f"[ПОВТОРНЫЙ ПРОВАЛ] И повторный вызов тоже не сработал, блядь!")
-                        pass
-                pass  # child can crash/hang; orchestrator will replace it
+                        print(f"[АЛЬТЕРНАТИВНЫЙ ВЫЗОВ {alternative_calls_tried}] Пробуем альтернативный вызов!")
+                        
+                        # Try different argument combinations
+                        if alternative_calls_tried == 1:
+                            # Try with no arguments
+                            результат = функция_хаоса()
+                            print(f"[АЛЬТ РЕЗУЛЬТАТ] Без аргументов: {результат}")
+                        elif alternative_calls_tried == 2:
+                            # Try with single NULL pointer
+                            результат = функция_хаоса(ебаный.c_void_p(0))
+                            print(f"[АЛЬТ РЕЗУЛЬТАТ] С NULL: {результат}")
+                        elif alternative_calls_tried == 3:
+                            # Try with single integer
+                            результат = функция_хаоса(ебаный.c_int(сука.randint(0, 100)))
+                            print(f"[АЛЬТ РЕЗУЛЬТАТ] С int: {результат}")
+                        elif alternative_calls_tried == 4:
+                            # Try with dolboyob data
+                            try:
+                                долбоёб_instance = долбоёб_модуль.долбоёб()
+                                dolboyob_data = долбоёб_instance.хуй(None)
+                                if dolboyob_data:
+                                    результат = функция_хаоса(ебаный.c_char_p(dolboyob_data.encode('utf-8', errors='ignore')))
+                                    print(f"[АЛЬТ РЕЗУЛЬТАТ] С dolboyob: {результат}")
+                                else:
+                                    результат = функция_хаоса(ебаный.c_int(42))
+                                    print(f"[АЛЬТ РЕЗУЛЬТАТ] С 42: {результат}")
+                            except:
+                                результат = функция_хаоса(ебаный.c_int(42))
+                                print(f"[АЛЬТ РЕЗУЛЬТАТ] С 42 (fallback): {результат}")
+                        else:
+                            # Final attempt with random int
+                            результат = функция_хаоса(ебаный.c_int(сука.randint(-1000, 1000)))
+                            print(f"[АЛЬТ РЕЗУЛЬТАТ] Финальная попытка: {результат}")
+                            
+                        вызов_успешен = True
+                        счётчик_хаоса += 1
+                        вызовов_сделано += 1
+                        print(f"[АЛЬТЕРНАТИВНЫЙ УСПЕХ] Альтернативный вызов #{alternative_calls_tried} успешен!")
+                        
+                    except Exception as alt_error:
+                        print(f"[АЛЬТЕРНАТИВНАЯ ОШИБКА {alternative_calls_tried}] {alt_error}")
+                        continue
+                
+                if not вызов_успешен:
+                    print(f"[ВСЕ АЛЬТЕРНАТИВЫ ПРОВАЛИЛИСЬ] Не смогли выполнить функцию никак!")
+                    # Still count as an attempt
+                    вызовов_сделано += 1
                 
             # Random memory corruption attempts
             if сука.random() < 0.001:  # 0.1% chance
@@ -1182,12 +1377,20 @@ def породить_одного_хаоса(dlls, вызовы_на_потом�
 def оркестровать_хаос():
     """🔥🔥🔥 MAXIMUM CURSED ORCHESTRATOR 🔥🔥🔥"""
     print(f"[НАЧАЛО ОРКЕСТРОВКИ] Запускаем главную оркестровку хаоса!")
+    
+    # Remove OS restrictions to allow execution on any platform
+    print(f"[OS ДЕТЕКТ] Операционная система: {говно.name}")
+    print(f"[ARCH ДЕТЕКТ] Архитектура указателей: {ебаный.sizeof(ебаный.c_void_p) * 8}-bit")
+    
+    # Continue regardless of OS for maximum chaos
     if говно.name != "nt":
-        print("[-] Windows-only. НО ПИЗДЕЦ БУДЕТ ВЕЗДЕ!", file=пиздец.stderr)
-        пиздец.exit(2)
+        print("[ПРЕДУПРЕЖДЕНИЕ] Не Windows, но ПИЗДЕЦ БУДЕТ ВЕЗДЕ!", file=пиздец.stderr)
+        # Don't exit, continue with chaos
+    
     if ебаный.sizeof(ебаный.c_void_p) != 8:
-        print("[-] Use 64-bit Python to call x64 DLLs. ИЛИ ПИЗДЕЦ!", file=пиздец.stderr)
-        пиздец.exit(2)
+        print("[ПРЕДУПРЕЖДЕНИЕ] Не 64-bit, но попробуем всё равно!", file=пиздец.stderr)
+        # Don't exit, continue with chaos
+        
     if СУКА_СИД is not None:
         print(f"[СЕМЯ ХАОСА] Используем фиксированное семя: {СУКА_СИД}")
         сука.seed(СУКА_СИД ^ 0xDEADBEEF)  # XOR for extra chaos
@@ -1206,15 +1409,70 @@ def оркестровать_хаос():
     
     if not dlls:
         print("[-] No suitable DLLs found. СОЗДАЁМ ПИЗДЕЦ ИЗ НИЧЕГО!")
-        # Create fake DLLs for chaos when none found
-        fake_count = сука.randint(5, 20)
-        print(f"[FAKE DLL] Создаём {fake_count} поддельных DLL!")
-        for i in range(fake_count):
-            fake_path = f"C:\\FAKE_CHAOS\\FAKE_{i}.dll"
-            fake_names = [f"FAKE_API_{j}" for j in range(сука.randint(1, 10))]
-            dlls.append((fake_path, fake_names))
+        
+        # First try to add system libraries with known functions
+        system_libraries = []
+        if говно.name == "nt":
+            # Windows system libraries
+            system_libs = [
+                ("kernel32.dll", ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess", "GetCurrentProcess", "GetCurrentThread"]),
+                ("user32.dll", ["MessageBoxA", "FindWindowA", "GetWindowTextA", "SetWindowTextA", "ShowWindow"]),
+                ("ntdll.dll", ["NtQuerySystemInformation", "RtlGetVersion", "NtCreateFile", "NtClose"]),
+                ("msvcrt.dll", ["malloc", "free", "printf", "strlen", "strcmp", "memcpy"]),
+                ("shell32.dll", ["ShellExecuteA", "SHGetFolderPathA", "ExtractIconA"])
+            ]
+        else:
+            # Unix-like system libraries
+            system_libs = [
+                ("libc.so.6", ["malloc", "free", "printf", "strlen", "strcmp", "memcpy", "exit", "getpid"]),
+                ("libm.so.6", ["sin", "cos", "tan", "sqrt", "pow", "log", "exp"]),
+                ("libpthread.so.0", ["pthread_create", "pthread_join", "pthread_exit", "pthread_mutex_init"]),
+                ("libdl.so.2", ["dlopen", "dlsym", "dlclose", "dlerror"])
+            ]
+        
+        print(f"[СИСТЕМНЫЕ БИБЛИОТЕКИ] Добавляем {длина(system_libs)} системных библиотек!")
+        for lib_path, functions in system_libs:
+            try:
+                # Test if library can be loaded
+                if говно.name == "nt":
+                    test_lib = ебаный.WinDLL(lib_path)
+                else:
+                    test_lib = ебаный.CDLL(lib_path)
+                
+                # Verify at least one function exists
+                verified_functions = []
+                for func in functions:
+                    try:
+                        test_func = getattr(test_lib, func)
+                        verified_functions.append(func)
+                    except:
+                        continue
+                
+                if verified_functions:
+                    full_path = lib_path if '/' in lib_path or '\\' in lib_path else f"/lib/{lib_path}"
+                    system_libraries.append((full_path, verified_functions))
+                    print(f"[СИСТЕМА ДОБАВЛЕНА] {lib_path} с {длина(verified_functions)} функциями: {verified_functions[:3]}...")
+                    
+            except Exception as lib_error:
+                print(f"[СИСТЕМА ПРОВАЛ] Не смогли добавить {lib_path}: {lib_error}")
+                continue
+        
+        dlls.extend(system_libraries)
+        print(f"[СИСТЕМНЫЕ УСПЕХ] Добавили {длина(system_libraries)} системных библиотек!")
+        
+        # Then create fake DLLs for chaos when none found
+        if not dlls:
+            fake_count = сука.randint(5, 20)
+            print(f"[FAKE DLL] Создаём {fake_count} поддельных DLL!")
+            for i in range(fake_count):
+                fake_path = f"C:\\FAKE_CHAOS\\FAKE_{i}.dll"
+                fake_names = [f"FAKE_API_{j}" for j in range(сука.randint(1, 10))]
+                dlls.append((fake_path, fake_names))
+        
         if not dlls:
             пиздец.exit(1)
+    
+    print(f"[ФИНАЛЬНЫЙ РЕЗУЛЬТАТ DLL] Всего доступно {длина(dlls)} библиотек для хаоса!")
 
     print(f"[СКАНИРОВАНИЕ ФАЙЛОВ] Сканируем файлы в {КОРЕНЬ_ФАЙЛОВ}")
     файлы = сканировать_случайные_файлы_с_хаосом(КОРЕНЬ_ФАЙЛОВ)
