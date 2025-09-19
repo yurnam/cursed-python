@@ -10,26 +10,26 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG ========================================
 ROOT_DIR             = r"C:\Windows\System32"           # Scan Windows dir for DLLs.
-WORKERS              = 100                      # parallel child processes for function execution
+WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 30                     # 30 second timeout per child process
+CHILD_TIMEOUT_SEC    = 2                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
 RECURSIVE            = True                    # Scan recursively
 TARGET_DLLS          = 5000                     # stop scanning once we have this many candidates
-SCAN_TIME_BUDGET_SEC = 20.0                    # time budget for DLL scanning
+SCAN_TIME_BUDGET_SEC = 50.0                    # time budget for DLL scanning
 MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
-MAX_SCAN_DEPTH       = 9                      # max subdirectory depth for DLL scanning
+MAX_SCAN_DEPTH       = 90                      # max subdirectory depth for DLL scanning
 TARGET_FILES         = 1000                   # max files to scan for random data
 
 # --- TIMING CONTROLS ---
 SHUFFLE_INTERVAL_SEC = 1.2                     # shuffle DLL/function array every 12 seconds
 RANDOMIZE_INTERVAL_SEC = 1.3                   # re-randomize parameter data every 13 seconds
-EXECUTION_BATCH_SIZE = 100                     # execute 10 functions in parallel
+EXECUTION_BATCH_SIZE = 101                     # execute 10 functions in parallel
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
@@ -187,8 +187,6 @@ def scan_x64_dlls_fast(root):
                 for e in it:
                     if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                         break
-                    if not e.is_file() or not (e.name.lower().endswith(".dll") or e.name.lower().endswith(".ocx") or e.name.lower().endswith(".sys") or e.name.lower().endswith(".exe")):
-                        continue
                     ok, names = parse_exports_x64_fast(e.path)
                     if ok and names:
                         picked.append((e.path, names))
@@ -208,7 +206,6 @@ def scan_x64_dlls_fast(root):
         for fn in filenames:
             if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                 return picked
-            if not (fn.lower().endswith(".dll")or fn.lower().endswith(".ocx") or fn.lower().endswith(".sys") or fn.lower().endswith(".exe")): continue
             p = os.path.join(dirpath, fn)
             ok, names = parse_exports_x64_fast(p)
             if ok and names:
@@ -318,17 +315,10 @@ def generate_randomized_input(files_list=None):
         return string
         
     elif input_type == 2:
-        # Random blob from system file (like explorer.exe, kernel32.dll)
-        system_files = [
-            r"C:\Windows\explorer.exe",
-            r"C:\Windows\System32\kernel32.dll", 
-            r"C:\Windows\System32\ntdll.dll",
-            r"C:\Windows\System32\user32.dll",
-            r"C:\Windows\System32\advapi32.dll",
-            r"C:\Intel\Thunderbolt\setup.exe",
-            r"C:\Windows\System32\shell32.dll",
-            r"C:\Windows\System32\msvcrt.dll"
-        ]
+        # Random blob from fandom file in program Files dorectory
+        system_files = files_list if files_list else []
+        if not system_files:
+            system_files = scan_random_files(r"C:\Program Files")
         
         target_file = random.choice(system_files)
         try:
