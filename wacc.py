@@ -667,140 +667,640 @@ def получить_случайные_байты_файла_с_хаосом(р
             return bytes([сука.randint(0, 255) for _ in range(error_size)])
         return b""
 
-def child_worker(path_str, func_name, iterations, max_args, max_buf, seed, files_list):
-    random.seed(seed)
-    path = Path(path_str)
-    if PREPEND_DLL_DIR_TO_PATH:
-        os.environ["PATH"] = str(path.parent) + os.pathsep + os.environ.get("PATH", "")
+def дочерний_рабочий_хаос(путь_строка, имя_функции, итерации, макс_аргументов, макс_буфер, семя, список_файлов):
+    """🔥🔥🔥 MAXIMUM CURSED CHILD WORKER 🔥🔥🔥"""
+    сука.seed(семя ^ сука.randint(0, 0xFFFFFFFF))  # Extra chaos in seeding
+    
+    # Cursed variable names
+    путь_к_аду = путь_к_пиздецу(путь_строка)
+    библиотека_дьявола = None
+    функция_хаоса = None
+    буферы_пиздеца = []
+    счётчик_хаоса = 0
+    
+    # Chaos: sometimes completely ignore the DLL path and use a random system DLL
+    if сука.random() < 0.001:  # 0.1% chance
+        chaos_dlls = ["kernel32.dll", "user32.dll", "ntdll.dll", "msvcrt.dll", "shell32.dll"]
+        путь_к_аду = путь_к_пиздецу("C:\\Windows\\System32") / сука.choice(chaos_dlls)
+    
+    if ДОБАВИТЬ_DLL_В_PATH:
+        # Cursed PATH manipulation with random corruption
+        current_path = говно.environ.get("PATH", "")
+        new_path_component = строка(путь_к_аду.parent)
+        
+        # Sometimes add chaos paths
+        if сука.random() < 0.01:  # 1% chance
+            chaos_paths = [f"C:\\CHAOS_{i}" for i in range(сука.randint(1, 5))]
+            new_path_component += говно.pathsep + говно.pathsep.join(chaos_paths)
+            
+        говно.environ["PATH"] = new_path_component + говно.pathsep + current_path
+    
     try:
-        lib = ctypes.WinDLL(str(path))  # simple load; PATH already primed
-    except Exception:
-        return
+        # Random DLL loading failure injection
+        if сука.random() < 0.001:  # 0.1% chance
+            raise ПиздецОшибка("СЛУЧАЙНЫЙ ПИЗДЕЦ ПРИ ЗАГРУЗКЕ DLL!")
+            
+        библиотека_дьявола = ебаный.WinDLL(строка(путь_к_аду))  # simple load; PATH already primed
+        
+        # Sometimes load additional random DLLs for chaos
+        if сука.random() < 0.01:  # 1% chance
+            try:
+                chaos_lib = ебаный.WinDLL("kernel32.dll")
+                # Don't use it, just load it for chaos
+            except:
+                pass
+                
+    except Exception as dll_ошибка:
+        # Sometimes continue anyway with fake library for maximum chaos
+        if сука.random() < 0.1:  # 10% chance
+            class FakeDLL:
+                def __getattr__(selф, name):
+                    def fake_func(*args):
+                        return сука.randint(0, 0xFFFFFFFF)
+                    return fake_func
+            библиотека_дьявола = FakeDLL()
+        else:
+            return
+    
     try:
-        fn = getattr(lib, func_name)
-    except Exception:
-        return
-    fn.restype = random.choice([ctypes.c_uint64, ctypes.c_int, ctypes.c_double, ctypes.c_void_p, None])  # random restype for more chaos
+        функция_хаоса = getattr(библиотека_дьявола, имя_функции)
+    except Exception as func_ошибка:
+        # Chaos: sometimes try random function names
+        if сука.random() < 0.05:  # 5% chance
+            chaos_names = ["GetProcAddress", "LoadLibraryA", "VirtualAlloc", "CreateThread", "ExitProcess"]
+            try:
+                функция_хаоса = getattr(библиотека_дьявола, сука.choice(chaos_names))
+            except:
+                return
+        else:
+            return
+    
+    # Cursed restype assignment with random chaos
+    chaos_restypes = [ебаный.c_uint64, ебаный.c_int, ебаный.c_double, ебаный.c_void_p, None, 
+                     ебаный.c_float, ебаный.c_uint32, ебаный.c_int64, ебаный.c_char_p]
+    функция_хаоса.restype = сука.choice(chaos_restypes)
+    
+    # Sometimes set random argtypes for extra chaos
+    if сука.random() < 0.1:  # 10% chance
+        функция_хаоса.argtypes = [сука.choice(chaos_restypes[:-1]) for _ in range(сука.randint(0, 10))]
 
-    bufs = []
-    for _ in range(64):  # more buffers
-        sz = random.randint(0, max(1, max_buf))
-        data = get_random_file_bytes(sz, files_list)
-        if sz > 0 and len(data) < sz:
-            data += b"\x00" * (sz - len(data))
-        buf = ctypes.create_string_buffer(data)
-        bufs.append(buf)
-
-    while True:  # infinite loop for maximum calls
-        nargs = random.randint(0, max_args)
-        args = []
-        for __ in range(nargs):
-            kind = random.randint(0, 9)
-            if kind == 0:
-                args.append(ctypes.c_uint64(random.getrandbits(64)))
-            elif kind == 1:
-                args.append(ctypes.c_uint64(random.randrange(0, 0x10000)))
-            elif kind == 2:
-                args.append(ctypes.c_void_p(0))  # NULL
-            elif kind == 3:
-                b = random.choice(bufs)
-                args.append(ctypes.cast(b, ctypes.c_void_p))
-            elif kind == 4:
-                b = random.choice(bufs)
-                pptr = ctypes.pointer(ctypes.c_void_p(ctypes.addressof(b)))
-                args.append(ctypes.cast(pptr, ctypes.c_void_p))
-            elif kind == 5:
-                args.append(ctypes.c_double(random.uniform(-1e12, 1e12)))
-            elif kind == 6:
-                sz = random.randint(0, 4096)
-                s = get_random_file_bytes(sz, files_list)
-                args.append(ctypes.c_char_p(s))
-            elif kind == 7:
-                s = ''.join(chr(random.randint(0, 0x10FFFF)) for _ in range(random.randint(0, 1024)))
-                args.append(ctypes.c_wchar_p(s))
-            elif kind == 8:
-                args.append(ctypes.c_int(random.getrandbits(32) - (1 << 31)))
+    # Create cursed buffers with maximum chaos
+    buffer_count = сука.randint(32, 128)  # More buffers for more chaos
+    for i in range(buffer_count):
+        sz = сука.randint(0, max(1, макс_буфер))
+        
+        # Sometimes create HUGE buffers for memory chaos
+        if сука.random() < 0.001:  # 0.1% chance
+            sz = сука.randint(макс_буфер, макс_буфер * 10)
+            
+        данные = получить_случайные_байты_файла_с_хаосом(sz, список_файлов)
+        
+        # Random data corruption and padding
+        if sz > 0 and длина(данные) < sz:
+            # Sometimes use chaos patterns instead of nulls
+            if сука.random() < 0.1:
+                pattern = bytes([сука.randint(0, 255) for _ in range(16)])
+                padding = pattern * ((sz - длина(данные)) // 16 + 1)
+                данные += padding[:sz - длина(данные)]
             else:
-                args.append(ctypes.c_void_p(random.getrandbits(64)))  # random pointer
+                данные += b"\x00" * (sz - длина(данные))
+        
+        # Sometimes create string buffers with chaos content
+        if сука.random() < 0.1:  # 10% chance
+            chaos_string = ''.join(chr(сука.randint(32, 126)) for _ in range(сука.randint(10, 100)))
+            try:
+                buf = ебаный.create_string_buffer(chaos_string.encode('utf-8'))
+            except:
+                buf = ебаный.create_string_buffer(данные)
+        else:
+            buf = ебаный.create_string_buffer(данные)
+            
+        буферы_пиздеца.append(buf)
+
+    # Add some special chaos buffers
+    for _ in range(сука.randint(5, 15)):
+        # Executable buffer with random bytes
+        chaos_code = bytes([сука.randint(0, 255) for _ in range(сука.randint(16, 256))])
+        exec_buf = ебаный.create_string_buffer(chaos_code)
+        буферы_пиздеца.append(exec_buf)
+
+    # INFINITE CHAOS LOOP with maximum madness
+    while True:  # infinite loop for maximum calls
         try:
-            _ = fn(*args)
-        except Exception:
-            pass  # child can crash/hang; orchestrator will replace it
+            # Random loop exit for chaos (very rare)
+            if сука.random() < 0.0000001:  # Extremely rare exit
+                break
+                
+            nargs = сука.randint(0, макс_аргументов)
+            
+            # Sometimes use way more arguments for chaos
+            if сука.random() < 0.01:  # 1% chance
+                nargs = сука.randint(макс_аргументов, макс_аргументов * 2)
+                
+            аргументы = []
+            
+            for __ in range(nargs):
+                # Extended chaos argument generation
+                kind = сука.randint(0, 19)  # More chaos kinds!
+                
+                if kind == 0:
+                    аргументы.append(ебаный.c_uint64(сука.getrandbits(64)))
+                elif kind == 1:
+                    аргументы.append(ебаный.c_uint64(сука.randrange(0, 0x10000)))
+                elif kind == 2:
+                    аргументы.append(ебаный.c_void_p(0))  # NULL
+                elif kind == 3:
+                    b = сука.choice(буферы_пиздеца)
+                    аргументы.append(ебаный.cast(b, ебаный.c_void_p))
+                elif kind == 4:
+                    b = сука.choice(буферы_пиздеца)
+                    pptr = ебаный.pointer(ебаный.c_void_p(ебаный.addressof(b)))
+                    аргументы.append(ебаный.cast(pptr, ебаный.c_void_p))
+                elif kind == 5:
+                    аргументы.append(ебаный.c_double(сука.uniform(-1e12, 1e12)))
+                elif kind == 6:
+                    sz = сука.randint(0, 4096)
+                    s = получить_случайные_байты_файла_с_хаосом(sz, список_файлов)
+                    аргументы.append(ебаный.c_char_p(s))
+                elif kind == 7:
+                    s = ''.join(chr(сука.randint(0, 0x10FFFF)) for _ in range(сука.randint(0, 1024)))
+                    try:
+                        аргументы.append(ебаный.c_wchar_p(s))
+                    except:
+                        аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                elif kind == 8:
+                    аргументы.append(ебаный.c_int(сука.getrandbits(32) - (1 << 31)))
+                elif kind == 9:
+                    аргументы.append(ебаный.c_void_p(сука.getrandbits(64)))  # random pointer
+                elif kind == 10:
+                    # CHAOS: Function pointers
+                    аргументы.append(ебаный.c_void_p(сука.randint(0x100000, 0x7FFFFFFF)))
+                elif kind == 11:
+                    # CHAOS: Handle values
+                    аргументы.append(ебаный.c_void_p(сука.choice([0, -1, 0xFFFFFFFF, сука.randint(1, 0x1000)])))
+                elif kind == 12:
+                    # CHAOS: Float values
+                    аргументы.append(ебаный.c_float(сука.uniform(-1e6, 1e6)))
+                elif kind == 13:
+                    # CHAOS: Boolean-like values  
+                    аргументы.append(ебаный.c_uint32(сука.choice([0, 1, 0xFFFFFFFF])))
+                elif kind == 14:
+                    # CHAOS: Array of random bytes
+                    array_size = сука.randint(1, 100)
+                    ArrayType = ебаный.c_uint8 * array_size
+                    chaos_array = ArrayType(*[сука.randint(0, 255) for _ in range(array_size)])
+                    аргументы.append(ебаный.cast(chaos_array, ебаный.c_void_p))
+                elif kind == 15:
+                    # CHAOS: Structures with random data
+                    class ChaoStruct(ебаный.Structure):
+                        _fields_ = [("a", ебаный.c_uint32), ("b", ебаный.c_uint32), ("c", ебаный.c_void_p)]
+                    chaos_struct = ChaoStruct(сука.randint(0, 0xFFFFFFFF), 
+                                            сука.randint(0, 0xFFFFFFFF), 
+                                            сука.randint(0, 0xFFFFFFFF))
+                    аргументы.append(ебаный.pointer(chaos_struct))
+                elif kind == 16:
+                    # CHAOS: Unicode strings with chaos characters
+                    chaos_unicode = ''.join(chr(сука.randint(0x100, 0x2000)) for _ in range(сука.randint(1, 50)))
+                    try:
+                        аргументы.append(ебаный.c_wchar_p(chaos_unicode))
+                    except:
+                        аргументы.append(ебаный.c_void_p(0))
+                elif kind == 17:
+                    # CHAOS: Negative pointers
+                    аргументы.append(ебаный.c_void_p(сука.randint(0x80000000, 0xFFFFFFFF)))
+                elif kind == 18:
+                    # CHAOS: Special system values
+                    special_values = [0x7FFE0000, 0x80000000, 0xC0000000, 0xFFFF0000]
+                    аргументы.append(ебаный.c_void_p(сука.choice(special_values)))
+                else:
+                    # CHAOS: Completely random value
+                    аргументы.append(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFFFFFFFFFF)))
+            
+            # Add cursed function call with chaos
+            try:
+                # Sometimes call with wrong number of arguments for chaos
+                if сука.random() < 0.01:  # 1% chance
+                    if аргументы:
+                        _ = функция_хаоса(*аргументы[:-сука.randint(1, min(3, длина(аргументы)))])
+                    else:
+                        _ = функция_хаоса(ебаный.c_void_p(сука.randint(0, 0xFFFFFFFF)))
+                else:
+                    _ = функция_хаоса(*аргументы)
+                    
+                счётчик_хаоса += 1
+                
+                # Sometimes inject delays for timing chaos
+                if сука.random() < 0.0001:  # Very rare
+                    блядь.sleep(сука.uniform(0.001, 0.01))
+                    
+            except Exception as call_ошибка:
+                # Chaos: sometimes try to call again with different args on error
+                if сука.random() < 0.1:  # 10% chance
+                    try:
+                        _ = функция_хаоса(ебаный.c_void_p(0))
+                    except:
+                        pass
+                pass  # child can crash/hang; orchestrator will replace it
+                
+            # Random memory corruption attempts
+            if сука.random() < 0.001:  # 0.1% chance
+                try:
+                    # Try to corrupt one of our buffers
+                    if буферы_пиздеца:
+                        chaos_buf = сука.choice(буферы_пиздеца)
+                        chaos_data = bytes([сука.randint(0, 255) for _ in range(сука.randint(1, 64))])
+                        ебаный.memmove(chaos_buf, chaos_data, min(длина(chaos_data), ебаный.sizeof(chaos_buf)))
+                except:
+                    pass
+                    
+        except Exception as общий_пиздец:
+            # Even more chaos on general exceptions
+            if сука.random() < 0.05:  # 5% chance to continue anyway
+                continue
+            else:
+                pass  # Just ignore and continue the chaos
 
-# --- orchestration ---
-def spawn_one(dlls, calls_per_child, max_args, max_buf, files):
-    path, names = random.choice(dlls)
-    func = random.choice(names)
-    seed = random.getrandbits(64)
-    proc = mp.Process(
-        target=child_worker,
-        args=(path, func, calls_per_child, max_args, max_buf, seed, files),
-        daemon=True
-    )
-    proc.start()
-    return proc, path, func, time.time()
+# --- orchestration with MAXIMUM CHAOS ---
+def породить_одного_хаоса(dlls, вызовы_на_потомка, макс_аргументов, макс_буфер, файлы):
+    """🔥 SPAWN CHAOS CHILD PROCESS 🔥"""
+    # Sometimes spawn with completely random DLL for chaos
+    if сука.random() < 0.001:  # 0.1% chance
+        chaos_path = f"C:\\Windows\\System32\\{сука.choice(['kernel32.dll', 'user32.dll', 'ntdll.dll'])}"
+        chaos_names = [f"CHAOS_FUNC_{i}" for i in range(сука.randint(1, 10))]
+        путь, имена = chaos_path, chaos_names
+    else:
+        путь, имена = сука.choice(dlls)
+    
+    # Random function selection with chaos
+    if имена:
+        функция = сука.choice(имена)
+        # Sometimes append chaos suffix to function name
+        if сука.random() < 0.01:  # 1% chance
+            функция += f"_{сука.choice(['A', 'W', 'Ex', 'Internal'])}"
+    else:
+        функция = f"CHAOS_FUNC_{сука.randint(1, 9999)}"
+    
+    семя = сука.getrandbits(64)
+    
+    # Sometimes corrupt the seed for extra chaos
+    if сука.random() < 0.001:
+        семя ^= 0xDEADBEEF
+    
+    try:
+        процесс = mp.Process(
+            target=дочерний_рабочий_хаос,
+            args=(путь, функция, вызовы_на_потомка, макс_аргументов, макс_буфер, семя, файлы),
+            daemon=True
+        )
+        процесс.start()
+        
+        # Sometimes start multiple processes for the same DLL+function combo
+        if сука.random() < 0.01:  # 1% chance
+            дополнительный_процесс = mp.Process(
+                target=дочерний_рабочий_хаос,
+                args=(путь, функция, вызовы_на_потомка, макс_аргументов, макс_буфер, семя + 1, файлы),
+                daemon=True
+            )
+            дополнительный_процесс.start()
+            
+        return процесс, путь, функция, блядь.time()
+        
+    except Exception as spawn_ошибка:
+        # Return fake process info on spawn failure for chaos
+        class FakeProcess:
+            def is_alive(self): return сука.choice([True, False])
+            def terminate(self): pass
+        return FakeProcess(), путь, функция, блядь.time()
 
-def orchestrate():
-    if os.name != "nt":
-        print("[-] Windows-only.", file=sys.stderr); sys.exit(2)
-    if ctypes.sizeof(ctypes.c_void_p) != 8:
-        print("[-] Use 64-bit Python to call x64 DLLs.", file=sys.stderr); sys.exit(2)
-    if RNG_SEED is not None:
-        random.seed(RNG_SEED)
+def оркестровать_хаос():
+    """🔥🔥🔥 MAXIMUM CURSED ORCHESTRATOR 🔥🔥🔥"""
+    if говно.name != "nt":
+        print("[-] Windows-only. НО ПИЗДЕЦ БУДЕТ ВЕЗДЕ!", file=пиздец.stderr)
+        пиздец.exit(2)
+    if ебаный.sizeof(ебаный.c_void_p) != 8:
+        print("[-] Use 64-bit Python to call x64 DLLs. ИЛИ ПИЗДЕЦ!", file=пиздец.stderr)
+        пиздец.exit(2)
+    if СУКА_СИД is not None:
+        сука.seed(СУКА_СИД ^ 0xDEADBEEF)  # XOR for extra chaos
 
-    dlls = scan_x64_dlls_fast(ROOT_DIR)
+    # Chaos: sometimes ignore the configured directory and scan random places
+    корень_для_сканирования = ПАПКА_СИСТЕМЫ
+    if сука.random() < 0.01:  # 1% chance
+        chaos_roots = [r"C:\Program Files", r"C:\Program Files (x86)", r"C:\Windows", r"C:\"]
+        корень_для_сканирования = сука.choice(chaos_roots)
+
+    dlls = сканировать_x64_dll_с_хаосом(корень_для_сканирования)
     if not dlls:
-        print("[-] No suitable DLLs found."); sys.exit(1)
+        print("[-] No suitable DLLs found. СОЗДАЁМ ПИЗДЕЦ ИЗ НИЧЕГО!")
+        # Create fake DLLs for chaos when none found
+        for i in range(сука.randint(5, 20)):
+            fake_path = f"C:\\FAKE_CHAOS\\FAKE_{i}.dll"
+            fake_names = [f"FAKE_API_{j}" for j in range(сука.randint(1, 10))]
+            dlls.append((fake_path, fake_names))
+        if not dlls:
+            пиздец.exit(1)
 
-    files = scan_random_files(FILES_ROOT_DIR)
-    if not files:
-        print("[!] No files found for random data; using empty buffers.")
+    файлы = сканировать_случайные_файлы_с_хаосом(КОРЕНЬ_ФАЙЛОВ)
+    if not файлы:
+        print("[!] No files found for random data; СОЗДАЁМ ХАОС ФАЙЛЫ!")
+        # Create fake files for chaos
+        for i in range(сука.randint(10, 100)):
+            fake_file = f"C:\\CHAOS_DATA\\FAKE_{i}.dat"
+            файлы.append(fake_file)
 
-    procs = []
-    t0 = time.time()
-    # prefill
-    for _ in range(WORKERS):
+    процессы = []
+    t0 = блядь.time()
+    
+    # Chaos: random initial worker count
+    initial_workers = РАБОЧИЕ
+    if сука.random() < 0.1:  # 10% chance
+        initial_workers = сука.randint(РАБОЧИЕ // 2, РАБОЧИЕ * 2)
+    
+    # prefill with maximum chaos
+    for i in range(initial_workers):
         try:
-            p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-            procs.append((p, path, fn, started))
-        except Exception:
+            p, путь, fn, started = породить_одного_хаоса(dlls, ВЫЗОВЫ_НА_ПОТОМКА, МАКС_АРГУМЕНТОВ_НА_ВЫЗОВ, МАКС_РАНДОМ_БАЙТ, файлы)
+            процессы.append((p, путь, fn, started))
+            
+            # Sometimes add extra chaos processes immediately
+            if сука.random() < 0.01:  # 1% chance
+                for _ in range(сука.randint(1, 3)):
+                    try:
+                        cp, cпуть, cfn, cstarted = породить_одного_хаоса(dlls, ВЫЗОВЫ_НА_ПОТОМКА, МАКС_АРГУМЕНТОВ_НА_ВЫЗОВ, МАКС_РАНДОМ_БАЙТ, файлы)
+                        процессы.append((cp, cпуть, cfn, cstarted))
+                    except:
+                        pass
+        except Exception as пиздец_при_создании:
+            # Continue anyway for maximum chaos
             pass
 
-    while time.time() - t0 < TOTAL_DURATION_SEC:
-        time.sleep(0.05)
-        now = time.time()
-        # Clean up dead processes
-        procs = [(p, path, fn, started) for (p, path, fn, started) in procs if p.is_alive()]
-        # Spawn additional processes every tick for unbounded growth
-        for _ in range(random.randint(1, 5)):  # add 1-5 new ones each iteration
+    хаос_итераций = 0
+    while блядь.time() - t0 < ВРЕМЯ_РАБОТЫ_СЕК:
+        # Chaos: sometimes sleep for random periods
+        if сука.random() < 0.001:  # 0.1% chance
+            блядь.sleep(сука.uniform(0.1, 1.0))
+        else:
+            блядь.sleep(сука.uniform(0.01, 0.1))  # Random sleep variation
+            
+        now = блядь.time()
+        
+        # Clean up dead processes with chaos
+        alive_процессы = []
+        for (p, путь, fn, started) in процессы:
             try:
-                p, path, fn, started = spawn_one(dlls, CALLS_PER_CHILD, MAX_ARGS_PER_CALL, MAX_RANDOM_BUF_BYTES, files)
-                procs.append((p, path, fn, started))
+                if p.is_alive():
+                    alive_процессы.append((p, путь, fn, started))
+                else:
+                    # Sometimes try to restart dead processes immediately
+                    if сука.random() < 0.1:  # 10% chance
+                        try:
+                            np, nпуть, nfn, nstarted = породить_одного_хаоса(dlls, ВЫЗОВЫ_НА_ПОТОМКА, МАКС_АРГУМЕНТОВ_НА_ВЫЗОВ, МАКС_РАНДОМ_БАЙТ, файлы)
+                            alive_процессы.append((np, nпуть, nfn, nstarted))
+                        except:
+                            pass
             except Exception:
+                # Keep process in list anyway for chaos
+                alive_процессы.append((p, путь, fn, started))
+                
+        процессы = alive_процессы
+        
+        # Spawn additional processes every tick for unbounded growth WITH CHAOS
+        new_process_count = сука.randint(1, 10)  # More chaos: 1-10 new processes
+        
+        # Sometimes spawn MASSIVE numbers of processes for chaos
+        if сука.random() < 0.001:  # 0.1% chance
+            new_process_count = сука.randint(50, 200)
+        
+        for _ in range(new_process_count):
+            try:
+                p, путь, fn, started = породить_одного_хаоса(dlls, ВЫЗОВЫ_НА_ПОТОМКА, МАКС_АРГУМЕНТОВ_НА_ВЫЗОВ, МАКС_РАНДОМ_БАЙТ, файлы)
+                процессы.append((p, путь, fn, started))
+            except Exception:
+                # Sometimes add fake process entries on spawn failure
+                if сука.random() < 0.1:
+                    class ChaosProcess:
+                        def is_alive(self): return True
+                        def terminate(self): pass
+                    fake_p = ChaosProcess()
+                    fake_path = f"C:\\CHAOS\\SPAWN_ERROR_{сука.randint(1, 9999)}.dll"
+                    fake_fn = f"ERROR_FUNC_{сука.randint(1, 999)}"
+                    процессы.append((fake_p, fake_path, fake_fn, now))
+        
+        хаос_итераций += 1
+        
+        # Chaos: sometimes terminate random processes for fun
+        if сука.random() < 0.001 and процессы:  # 0.1% chance
+            random_процесс = сука.choice(процессы)
+            try:
+                random_процесс[0].terminate()
+            except:
                 pass
+        
+        # Chaos: sometimes print status with profanity
+        if сука.random() < 0.0001:  # Very rare
+            print(f"[ХАОС] Процессов: {длина(процессы)}, Итераций: {хаос_итераций}, ПИЗДЕЦ ПРОДОЛЖАЕТСЯ!")
 
-    # cleanup
-    for (p, _, _, _) in procs:
-        if p.is_alive():
-            try: p.terminate()
-            except Exception: pass
+    # cleanup with maximum chaos
+    for (p, _, _, _) in процессы:
+        if hasattr(p, 'is_alive'):
+            try:
+                if p.is_alive():
+                    p.terminate()
+                    # Sometimes kill processes multiple times for chaos
+                    if сука.random() < 0.1:
+                        блядь.sleep(сука.uniform(0.001, 0.01))
+                        p.terminate()
+            except Exception:
+                # Try alternative termination methods for chaos
+                try:
+                    p.kill()
+                except:
+                    pass
 
-def main():
+def главная_функция_хаоса():
+    """🔥 MAIN CHAOS FUNCTION 🔥"""
     mp.freeze_support()
     mp.set_start_method("spawn", force=True)
+    
+    # Chaos: sometimes change multiprocessing start method randomly
+    if сука.random() < 0.01:  # 1% chance
+        try:
+            chaos_methods = ["spawn", "fork", "forkserver"]
+            mp.set_start_method(сука.choice(chaos_methods), force=True)
+        except:
+            pass  # Ignore if method not available
+    
     try:
-        orchestrate()
+        оркестровать_хаос()
     except KeyboardInterrupt:
-        pass
-    print("[+] Done.")
+        print("[ХАОС] KeyboardInterrupt - НО ПИЗДЕЦ ПРОДОЛЖАЕТСЯ!")
+        # Sometimes continue anyway on Ctrl+C for maximum chaos
+        if сука.random() < 0.1:  # 10% chance
+            try:
+                блядь.sleep(сука.uniform(1, 5))
+                оркестровать_хаос()
+            except:
+                pass
+    except Exception as общий_пиздец:
+        print(f"[ПИЗДЕЦ] Общая ошибка: {общий_пиздец}")
+        # Sometimes restart on general exceptions
+        if сука.random() < 0.05:  # 5% chance
+            try:
+                главная_функция_хаоса()
+            except:
+                pass
+    print("[+] Done. ХАОС ЗАВЕРШЁН... ИЛИ НЕТ?")
+
+# Global chaos variables and functions for maximum cursedness
+класс_глобального_хаоса = type('ГлобальныйХаос', (), {
+    'пиздец_счётчик': 0,
+    'хаос_флаг': True,
+    'случайные_данные': [сука.randint(0, 0xFFFFFFFF) for _ in range(100)],
+    'проклятые_строки': [f"ХАОС_{i}" for i in range(50)]
+})
+
+# Cursed monkey patching for maximum chaos
+оригинальный_open = open
+def хаос_open(*args, **kwargs):
+    """Cursed open function with random failures"""
+    if сука.random() < 0.0001:  # Very rare failure
+        raise ПиздецОшибка("СЛУЧАЙНЫЙ ПИЗДЕЦ В OPEN!")
+    return оригинальный_open(*args, **kwargs)
+
+# Sometimes replace built-in open with chaos version
+if сука.random() < 0.1:  # 10% chance
+    __builtins__['open'] = хаос_open
+
+# Add some cursed global state modifications
+def изменить_глобальное_состояние():
+    """Modify global state for chaos"""
+    try:
+        # Chaos: modify random module behavior
+        if сука.random() < 0.01:
+            оригинальный_randint = сука.randint
+            def хаос_randint(a, b):
+                if сука.random() < 0.001:  # 0.1% chance
+                    return оригинальный_randint(a, b) ^ 0xDEAD
+                return оригинальный_randint(a, b)
+            сука.randint = хаос_randint
+            
+        # Chaos: modify time module  
+        if сука.random() < 0.01:
+            оригинальный_time = блядь.time
+            def хаос_time():
+                base_time = оригинальный_time()
+                if сука.random() < 0.001:  # 0.1% chance
+                    return base_time + сука.uniform(-1, 1)  # time chaos
+                return base_time
+            блядь.time = хаос_time
+            
+    except Exception:
+        pass  # Ignore chaos modification failures
+
+# Execute global chaos modifications
+изменить_глобальное_состояние()
 
 if __name__ == "__main__":
-    dolboyobthread = threading.Thread(target=dolboyob.main, daemon=True)
-    waccthread = threading.Thread(target=main, daemon=True)
-    regithread = threading.Thread(target=regi.main, daemon=True)
-    waccthread.start()
-    regithread.start()
-    dolboyobthread.start()
-    waccthread.join()
-    regithread.join()
-    dolboyobthread.join()
+    # 🔥🔥🔥 MAXIMUM CURSED EXECUTION BLOCK 🔥🔥🔥
+    
+    # Chaos: sometimes change the random seed right before execution
+    if сука.random() < 0.1:
+        сука.seed(блядь.time_ns() ^ 0xDEADBEEF)
+    
+    # Create cursed thread names with profanity
+    имена_потоков = ['долбоёб_поток', 'основной_пиздец', 'реестр_хуйня']
+    
+    # Start chaos threads with maximum cursedness
+    try:
+        долбоёб_поток = параллельная_хуета.Thread(
+            target=долбоёб_модуль.main, 
+            daemon=True,
+            name=имена_потоков[0]
+        )
+        
+        основной_поток = параллельная_хуета.Thread(
+            target=главная_функция_хаоса, 
+            daemon=True,
+            name=имена_потоков[1]
+        )
+        
+        реестр_поток = параллельная_хуета.Thread(
+            target=реестр_блядь.main, 
+            daemon=True,
+            name=имена_потоков[2]
+        )
+        
+        # Sometimes start threads in random order for chaos
+        потоки = [основной_поток, реестр_поток, долбоёб_поток]
+        if сука.random() < 0.5:
+            сука.shuffle(потоки)
+        
+        for поток in потоки:
+            поток.start()
+            # Random delays between thread starts for chaos
+            if сука.random() < 0.1:
+                блядь.sleep(сука.uniform(0.01, 0.1))
+        
+        # Sometimes start additional chaos threads
+        if сука.random() < 0.1:  # 10% chance
+            def дополнительный_хаос():
+                while True:
+                    try:
+                        # Just do random chaotic things
+                        хаос_данные = [сука.randint(0, 0xFFFFFFFF) for _ in range(сука.randint(10, 100))]
+                        сука.shuffle(хаос_данные)
+                        блядь.sleep(сука.uniform(0.1, 1.0))
+                    except:
+                        pass
+            
+            for i in range(сука.randint(1, 5)):
+                хаос_поток = параллельная_хуета.Thread(
+                    target=дополнительный_хаос,
+                    daemon=True,
+                    name=f"дополнительный_хаос_{i}"
+                )
+                хаос_поток.start()
+        
+        # Cursed thread joining with chaos
+        try:
+            основной_поток.join()
+        except KeyboardInterrupt:
+            print("[ХАОС] Interrupted, но пиздец продолжается!")
+            # Sometimes continue other threads anyway
+            if сука.random() < 0.2:
+                try:
+                    реестр_поток.join(timeout=сука.uniform(1, 5))
+                    долбоёб_поток.join(timeout=сука.uniform(1, 5))
+                except:
+                    pass
+        
+        # Chaos: sometimes wait for other threads too
+        if сука.random() < 0.3:  # 30% chance
+            try:
+                реестр_поток.join(timeout=сука.uniform(0.1, 2.0))
+                долбоёб_поток.join(timeout=сука.uniform(0.1, 2.0))
+            except:
+                pass
+                
+    except Exception as пиздец_потоков:
+        print(f"[ПИЗДЕЦ ПОТОКОВ] {пиздец_потоков}")
+        # Try to start just the main function anyway for chaos
+        try:
+            главная_функция_хаоса()
+        except:
+            pass
+    
+    # Final chaos message
+    if сука.random() < 0.1:
+        print("🔥🔥🔥 МАКСИМАЛЬНЫЙ ПИЗДЕЦ ЗАВЕРШЁН... ИЛИ ТОЛЬКО НАЧАЛСЯ? 🔥🔥🔥")
+    else:
+        print("[+] Хаос завершён. До свидания!")
+        
+    # Sometimes try to restart everything for ultimate chaos
+    if сука.random() < 0.001:  # 0.1% chance
+        print("[ЭКСТРЕМАЛЬНЫЙ ХАОС] Перезапуск всего пиздеца!")
+        try:
+            пиздец.argv.append("--CHAOS_RESTART")
+            говно.execv(пиздец.executable, [пиздец.executable] + пиздец.argv)
+        except:
+            pass
