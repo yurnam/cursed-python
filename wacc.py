@@ -10,7 +10,7 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG (MAXIMUM VALUES FOR RANDOMIZATION) ========================================
 # These are now MAXIMUM values - actual values will be randomized between 1 and these maxima
-ROOT_DIR_LIST        = [r"C:\Program Files", r"C:\Program Files (x86)"]  # Multiple scan directories
+ROOT_DIR_LIST        = [r"C:\Program Files"]  # Multiple scan directories
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
