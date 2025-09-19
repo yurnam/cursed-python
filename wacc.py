@@ -820,7 +820,7 @@ def main():
     mp.set_start_method("spawn", force=True)
     try:
         orchestrate()
-    except KeyboardInterrupt:
+    except:
         pass
     print("[+] Done.")
 
