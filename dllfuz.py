@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # Single DLL Fuzzer - focused fuzzing of a specific DLL file
 # Based on wacc.py but modified to fuzz only one hardcoded DLL
+#
+# IMPROVEMENTS:
+# - Removed hard dependency on EXECUTION_BATCH_SIZE
+# - Now works with ANY DLL regardless of exported function count
+# - Dynamically adapts batch size to available functions and workers
+# - Gracefully handles DLLs with 0, few, or many exported functions
+# - Maintains parallel execution and worker architecture
 
 import os
 import sys
