@@ -10,12 +10,12 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG (MAXIMUM VALUES FOR RANDOMIZATION) ========================================
 # These are now MAXIMUM values - actual values will be randomized between 1 and these maxima
-ROOT_DIR_LIST        = [r"C:\Program Files", r"C:\Windows", r"C:\Windows\System32"]  # Multiple scan directories
+ROOT_DIR_LIST        = [r"C:\Program Files", r"C:\Program Files (x86)"]  # Multiple scan directories
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
-CHILD_TIMEOUT_SEC    = 20                     # 30 second timeout per child process
+CHILD_TIMEOUT_SEC    = 2                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
@@ -48,7 +48,7 @@ last_param_randomize_time = 0
 # --- TIMING CONTROLS ---
 SHUFFLE_INTERVAL_SEC = 33                     # shuffle DLL/function array every 12 seconds
 RANDOMIZE_INTERVAL_SEC = 30                   # re-randomize parameter data every 13 seconds
-EXECUTION_BATCH_SIZE = 10                     # execute 10 functions in parallel
+EXECUTION_BATCH_SIZE = 100                     # execute 10 functions in parallel
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
@@ -708,7 +708,6 @@ def enumerate_all_dll_functions():
     
     print(f"[ENUMERATION] Complete! Found {total_functions} functions across {len(dlls)} DLLs")
     print(f"[ENUMERATION] Sample functions: {dll_function_array[:5]}")
-    time.sleep(10)
 
 def shuffle_dll_function_array():
     """Shuffle the DLL/function array every 12 seconds"""
@@ -914,7 +913,7 @@ def orchestrate():
         elapsed_total = time.time() - start_time
 
         # Brief pause before next cycle to prevent excessive CPU usage
-        time.sleep(0.1)
+        time.sleep(0.01)
     
 
 def main():
