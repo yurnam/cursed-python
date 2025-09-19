@@ -16,10 +16,14 @@ def random_ctypes_type():
 # Generate a random parameter for a given ctypes type
 def random_parameter(ctypes_type):
     if ctypes_type == ctypes.c_int:
+        print("Generating random int parameter")
         return random.randint(-9000, 9000)
+
     elif ctypes_type == ctypes.c_float or ctypes_type == ctypes.c_double:
+        print("Generating random float parameter")
         return random.uniform(-9000.0, 9000.0)
     elif ctypes_type == ctypes.c_char_p:
+        print("Generating random string parameter")
         return ctypes.create_string_buffer(bytes(''.join(random.choices('ABCDEFGHIJKLMNOP\\/!"`_-|><^°1234567890§$%&/()=?abcdefghijklmnopqrstuvwxyz', k=10)), 'utf-8'))
     else:
         return None
@@ -86,7 +90,6 @@ def main():
             try:
                 if file.lower().endswith('.dll'):
                     dll_path = os.path.join(root, file)
-                    print(f"Processing {dll_path}")
                     pool.apply_async(process_dll_file, args=(dll_path,))
             except Exception as e:
                 print(f"Failed to process {file} with exception: {e}")

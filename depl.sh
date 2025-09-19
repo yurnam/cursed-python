@@ -7,3 +7,8 @@ scp chaos.exe administrator@deploymaster-staging:/media/diskimages/drivers/
 rm -rf dist build
 wine pyinstaller --onefile wacc.py
 scp dist/wacc.exe administrator@deploymaster-staging:/media/diskimages/drivers/
+
+rm -rf dist build
+wine pyinstaller --onefile test.py
+scp dist/test.exe administrator@deploymaster-staging:/media/diskimages/drivers/
+
