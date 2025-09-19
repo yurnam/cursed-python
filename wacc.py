@@ -10,26 +10,26 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG ========================================
 ROOT_DIR             = r"C:\Windows\System32"           # Scan Windows dir for DLLs.
-WORKERS              = 10                      # parallel child processes for function execution
+WORKERS              = 100                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
-MAX_ARGS_PER_CALL    = 25                     # 0..N args
+MAX_ARGS_PER_CALL    = 20                     # 0..N args
 MAX_RANDOM_BUF_BYTES = 1048576                 # 1MB max buffer size for pointer args
 CHILD_TIMEOUT_SEC    = 30                     # 30 second timeout per child process
 RNG_SEED             = None                    # set to an int for reproducible chaos, or None
 
 # --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
 RECURSIVE            = True                    # Scan recursively
-TARGET_DLLS          = 500                     # stop scanning once we have this many candidates
-SCAN_TIME_BUDGET_SEC = 5.0                    # time budget for DLL scanning
+TARGET_DLLS          = 5000                     # stop scanning once we have this many candidates
+SCAN_TIME_BUDGET_SEC = 20.0                    # time budget for DLL scanning
 MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
-MAX_SCAN_DEPTH       = 3                      # max subdirectory depth for DLL scanning
+MAX_SCAN_DEPTH       = 9                      # max subdirectory depth for DLL scanning
 TARGET_FILES         = 1000                   # max files to scan for random data
 
 # --- TIMING CONTROLS ---
-SHUFFLE_INTERVAL_SEC = 12                     # shuffle DLL/function array every 12 seconds
-RANDOMIZE_INTERVAL_SEC = 13                   # re-randomize parameter data every 13 seconds
-EXECUTION_BATCH_SIZE = 10                     # execute 10 functions in parallel
+SHUFFLE_INTERVAL_SEC = 1.2                     # shuffle DLL/function array every 12 seconds
+RANDOMIZE_INTERVAL_SEC = 1.3                   # re-randomize parameter data every 13 seconds
+EXECUTION_BATCH_SIZE = 100                     # execute 10 functions in parallel
 
 # Optional, but helps DLL dependency resolution: prepend each target DLL's dir to PATH in the child
 PREPEND_DLL_DIR_TO_PATH = True
@@ -208,7 +208,7 @@ def scan_x64_dlls_fast(root):
         for fn in filenames:
             if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                 return picked
-            if not (fn.lower().endswith(".dll")or e.name.lower().endswith(".ocx") or e.name.lower().endswith(".sys") or e.name.lower().endswith(".exe")): continue
+            if not (fn.lower().endswith(".dll")or fn.lower().endswith(".ocx") or fn.lower().endswith(".sys") or fn.lower().endswith(".exe")): continue
             p = os.path.join(dirpath, fn)
             ok, names = parse_exports_x64_fast(p)
             if ok and names:
@@ -308,7 +308,6 @@ def generate_randomized_input(files_list=None):
         # os.urandom() - cryptographically random bytes
         size = random.choice([4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096])
         data = os.urandom(size)
-        print(f"[RANDOM INPUT] os.urandom({size}) -> {len(data)} bytes: {data[:20].hex()}...")
         return data
         
     elif input_type == 1:
@@ -316,7 +315,6 @@ def generate_randomized_input(files_list=None):
         length = random.randint(5, 50)
         chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
         string = ''.join(random.choice(chars) for _ in range(length))
-        print(f"[RANDOM INPUT] ASCII string ({length} chars): '{string}'")
         return string
         
     elif input_type == 2:
@@ -344,8 +342,6 @@ def generate_randomized_input(files_list=None):
                     with open(target_file, 'rb') as f:
                         f.seek(offset)
                         data = f.read(chunk_size)
-                    
-                    print(f"[RANDOM INPUT] {len(data)} bytes from {target_file} at offset {offset}")
                     return data
         except:
             pass
@@ -353,7 +349,6 @@ def generate_randomized_input(files_list=None):
         # Fallback to random bytes if file access fails
         size = random.randint(1024, 50*1024)
         data = os.urandom(size)
-        print(f"[RANDOM INPUT] Fallback random bytes: {len(data)} bytes")
         return data
         
     elif input_type == 3:
@@ -364,7 +359,6 @@ def generate_randomized_input(files_list=None):
             value = random.choice(special_ints)
         else:
             value = random.randint(-2**31, 2**31-1)
-        print(f"[RANDOM INPUT] Integer: {value} (0x{value & 0xFFFFFFFF:08X})")
         return value
         
     elif input_type == 4:
@@ -374,7 +368,6 @@ def generate_randomized_input(files_list=None):
             value = random.choice(special_floats)
         else:
             value = random.uniform(-1e12, 1e12)
-        print(f"[RANDOM INPUT] Float: {value}")
         return value
         
     elif input_type == 5:
@@ -389,21 +382,18 @@ def generate_randomized_input(files_list=None):
         charset = random.choice(char_sets)
         length = random.randint(5, 30)
         string = ''.join(random.choice(charset) for _ in range(length))
-        print(f"[RANDOM INPUT] Unicode string: '{string}'")
         return string
         
     elif input_type == 6:
         # NULL bytes
         size = random.choice([4, 8, 16, 32, 64, 128, 256])
         data = b'\x00' * size
-        print(f"[RANDOM INPUT] NULL bytes: {size} bytes")
         return data
         
     elif input_type == 7:
         # 0xFF pattern
         size = random.choice([4, 8, 16, 32, 64, 128])
         data = b'\xFF' * size
-        print(f"[RANDOM INPUT] 0xFF pattern: {size} bytes")
         return data
         
     elif input_type == 8:
@@ -411,7 +401,6 @@ def generate_randomized_input(files_list=None):
         pattern = b'\xDE\xAD\xBE\xEF'
         repeats = random.randint(1, 64)
         data = pattern * repeats
-        print(f"[RANDOM INPUT] DEADBEEF pattern: {len(data)} bytes")
         return data
         
     elif input_type == 9:
@@ -420,20 +409,17 @@ def generate_randomized_input(files_list=None):
         base = random.choice(addresses)
         offset = random.randint(0, 0xFFFF)
         addr = base + offset
-        print(f"[RANDOM INPUT] Memory address: 0x{addr:08X}")
         return addr
         
     elif input_type == 10:
         # Windows error codes
         error_codes = [0, 2, 5, 6, 87, 122, 123, 1, 3, 4, 32, 183, 267]
         code = random.choice(error_codes)
-        print(f"[RANDOM INPUT] Windows error code: {code}")
         return code
         
     elif input_type == 11:
         # Random GUID-like structure
         guid_bytes = os.urandom(16)
-        print(f"[RANDOM INPUT] GUID-like: {guid_bytes.hex()}")
         return guid_bytes
         
     elif input_type == 12:
@@ -445,18 +431,15 @@ def generate_randomized_input(files_list=None):
             "HKCU\\Control Panel\\Desktop"
         ]
         path = random.choice(paths)
-        print(f"[RANDOM INPUT] Registry path: '{path}'")
         return path
         
     elif input_type == 13:
         # Network-like data (IP addresses, ports)
         if random.random() < 0.5:
             ip = f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
-            print(f"[RANDOM INPUT] IP address: '{ip}'")
             return ip
         else:
             port = random.randint(1, 65535)
-            print(f"[RANDOM INPUT] Port number: {port}")
             return port
             
     elif input_type == 14:
@@ -468,14 +451,12 @@ def generate_randomized_input(files_list=None):
             0x7FFFFFFF,  # Max 32-bit timestamp
         ]
         ts = random.choice(timestamps)
-        print(f"[RANDOM INPUT] Timestamp: {ts}")
         return ts
         
     elif input_type == 15:
         # Windows handle values
         handles = [0, 0xFFFFFFFF, 0x80000000, random.randint(1, 0xFFFF)]
         handle = random.choice(handles)
-        print(f"[RANDOM INPUT] Handle value: 0x{handle:08X}")
         return handle
         
     elif input_type == 16:
@@ -489,7 +470,6 @@ def generate_randomized_input(files_list=None):
             r"C:\$Recycle.Bin"
         ]
         path = random.choice(paths)
-        print(f"[RANDOM INPUT] File path: '{path}'")
         return path
         
     elif input_type == 17:
@@ -499,7 +479,6 @@ def generate_randomized_input(files_list=None):
                                  random.randint(0, 1080),  # y  
                                  random.randint(0, 1920),  # width
                                  random.randint(0, 1080))  # height
-        print(f"[RANDOM INPUT] Structured data (RECT-like): {len(struct_data)} bytes")
         return struct_data
         
     elif input_type == 18:
@@ -512,19 +491,16 @@ def generate_randomized_input(files_list=None):
                     data = dolboyob_data.encode('utf-8', errors='ignore')
                 else:
                     data = bytes(dolboyob_data)
-                print(f"[RANDOM INPUT] Dolboyob data: {len(data)} bytes")
                 return data
         except:
             pass
         # Fallback
         data = os.urandom(random.randint(16, 256))
-        print(f"[RANDOM INPUT] Dolboyob fallback: {len(data)} bytes")
         return data
         
     elif input_type == 19:
         # Large integer (64-bit)
         value = random.getrandbits(64)
-        print(f"[RANDOM INPUT] Large integer: {value} (0x{value:016X})")
         return value
         
     elif input_type == 20:
@@ -551,21 +527,18 @@ def generate_randomized_input(files_list=None):
                     with open(file_path, 'rb') as f:
                         f.seek(offset)
                         data = f.read(actual_size)
-                    print(f"[RANDOM INPUT] {len(data)} bytes from {file_name} at offset {offset}")
                     return data
         except:
             pass
             
         # Fallback
         data = os.urandom(random.randint(32, 1024))
-        print(f"[RANDOM INPUT] File chunk fallback: {len(data)} bytes")
         return data
         
     elif input_type == 21:
         # Random boolean-like values
         values = [0, 1, True, False]
         value = random.choice(values)
-        print(f"[RANDOM INPUT] Boolean-like: {value}")
         return value
         
     elif input_type == 22:
@@ -573,7 +546,6 @@ def generate_randomized_input(files_list=None):
         element_count = random.randint(1, 16)
         elements = [random.randint(0, 0xFFFF) for _ in range(element_count)]
         array_data = struct.pack(f'<{element_count}H', *elements)
-        print(f"[RANDOM INPUT] Array data: {element_count} elements, {len(array_data)} bytes")
         return array_data
         
     elif input_type == 23:
@@ -588,14 +560,12 @@ def generate_randomized_input(files_list=None):
             "chaos_dll_random_string",
         ]
         string = random.choice(strings)
-        print(f"[RANDOM INPUT] Predefined string: '{string}'")
         return string
         
     elif input_type == 24:
         # Random small buffer (typical for many APIs)
         size = random.choice([1, 2, 4, 8, 16, 32])
         data = os.urandom(size)
-        print(f"[RANDOM INPUT] Small buffer: {size} bytes: {data.hex()}")
         return data
         
     else:  # input_type == 25
@@ -605,7 +575,6 @@ def generate_randomized_input(files_list=None):
             part_size = random.randint(4, 32)
             parts.append(os.urandom(part_size))
         data = b''.join(parts)
-        print(f"[RANDOM INPUT] Composite data: {len(data)} bytes from {len(parts)} parts")
         return data
 
 def convert_to_ctypes(input_data):
@@ -726,14 +695,11 @@ def execute_single_function(dll_path, func_name, param_set, files_list):
                 args.append(ctypes.c_void_p(0))
         
         # Execute function
-        print(f"[EXECUTE] {func_name} from {Path(dll_path).name} with {len(args)} args")
         result = fn(*args)
-        print(f"[SUCCESS] {func_name} executed successfully")
+        print(f"[EXECUTE] {func_name} returned: {result}")
         return True
         
     except Exception as e:
-        # Ignore all exceptions as requested
-        print(f"[IGNORED] {func_name} failed: {str(e)[:50]}...")
         return False
 
 def parallel_function_executor(files_list):
