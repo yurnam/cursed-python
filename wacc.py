@@ -9,7 +9,7 @@ from pathlib import Path
 import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG ========================================
-ROOT_DIR             = r"C:\Windows"           # Scan Windows dir for DLLs.
+ROOT_DIR             = r"C:\Windows\System32"           # Scan Windows dir for DLLs.
 WORKERS              = 10                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 25                     # 0..N args
@@ -187,7 +187,7 @@ def scan_x64_dlls_fast(root):
                 for e in it:
                     if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                         break
-                    if not e.is_file() or not (e.name.lower().endswith(".dll")):
+                    if not e.is_file() or not (e.name.lower().endswith(".dll") or e.name.lower().endswith(".ocx") or e.name.lower().endswith(".sys") or e.name.lower().endswith(".exe")):
                         continue
                     ok, names = parse_exports_x64_fast(e.path)
                     if ok and names:
@@ -208,7 +208,7 @@ def scan_x64_dlls_fast(root):
         for fn in filenames:
             if len(picked) >= TARGET_DLLS or (time.time() - t0) > SCAN_TIME_BUDGET_SEC:
                 return picked
-            if not (fn.lower().endswith(".dll")): continue
+            if not (fn.lower().endswith(".dll")or e.name.lower().endswith(".ocx") or e.name.lower().endswith(".sys") or e.name.lower().endswith(".exe")): continue
             p = os.path.join(dirpath, fn)
             ok, names = parse_exports_x64_fast(p)
             if ok and names:
