@@ -9,7 +9,7 @@ from pathlib import Path
 import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG ========================================
-ROOT_DIR             = r"C:\\"           # Scan Windows dir for DLLs.
+ROOT_DIR             = r"C:\Program Files"           # Scan Windows dir for DLLs.
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
