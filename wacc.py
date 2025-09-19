@@ -20,10 +20,10 @@ RNG_SEED             = None                    # set to an int for reproducible 
 # --- FUNCTION ENUMERATION AND EXECUTION SETTINGS ---
 RECURSIVE            = True                    # Scan recursively
 TARGET_DLLS          = 5000                     # stop scanning once we have this many candidates
-SCAN_TIME_BUDGET_SEC = 50.0                    # time budget for DLL scanning
+SCAN_TIME_BUDGET_SEC = 120.0                    # time budget for DLL scanning
 MAX_EXPORTS_PER_DLL  = 5000                   # at most N names per DLL
 EXCLUDE_DIR_NAMES    = set()
-MAX_SCAN_DEPTH       = 90                      # max subdirectory depth for DLL scanning
+MAX_SCAN_DEPTH       = 900                      # max subdirectory depth for DLL scanning
 TARGET_FILES         = 1000                   # max files to scan for random data
 
 # --- TIMING CONTROLS ---
