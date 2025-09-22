@@ -10,7 +10,7 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG (MAXIMUM VALUES FOR RANDOMIZATION) ========================================
 # These are now MAXIMUM values - actual values will be randomized between 1 and these maxima
-ROOT_DIR_LIST        = [r"C:\\"]  # Multiple scan directories
+ROOT_DIR_LIST        = [r"C:\Windows\System32"]  # Multiple scan directories
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
@@ -746,11 +746,10 @@ def prepare_parameter_sets(files_list):
             current_parameter_sets.append(param_set)
         
         last_randomize_time = current_time
-        print(f"[RANDOMIZE] Complete! {len(current_parameter_sets)} parameter sets ready")
-        print(f"[RANDOMIZE] Next randomization in {RANDOMIZE_INTERVAL_SEC} seconds")
 
 def execute_single_function(dll_path, func_name, param_set, files_list):
     """Execute a single DLL function with prepared parameters"""
+    print(f"[EXECUTE] Calling {func_name} from {dll_path} with {param_set}")
     try:
         # Set random seed for this execution
         random.seed(random.getrandbits(32))
