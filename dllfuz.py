@@ -619,6 +619,8 @@ def parallel_function_executor(files_list):
     processes = []
     for i, ((dll_path, func_name), param_set) in enumerate(zip(functions_to_execute, param_sets_to_use)):
         try:
+            if "LockWorks" in func_name:
+                continue # Skip known problematic functions
             print(f"[EXEC] Starting process for function: {func_name} with {len(param_set)} params")
             proc = mp.Process(
                 target=execute_single_function,

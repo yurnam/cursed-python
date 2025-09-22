@@ -10,7 +10,7 @@ import mmap
 import dolboyob
 # ==== HARD-CODED CONFIG (MAXIMUM VALUES FOR RANDOMIZATION) ========================================
 # These are now MAXIMUM values - actual values will be randomized between 1 and these maxima
-ROOT_DIR_LIST        = [r"C:\Program Files"]  # Multiple scan directories
+ROOT_DIR_LIST        = [r"C:\\"]  # Multiple scan directories
 WORKERS              = 214                      # parallel child processes for function execution
 TOTAL_DURATION_SEC   = 86400                   # 24 hours of runtime
 MAX_ARGS_PER_CALL    = 20                     # 0..N args
@@ -703,6 +703,8 @@ def enumerate_all_dll_functions():
     total_functions = 0
     for dll_path, function_names in dlls:
         for func_name in function_names:
+            if "LockWork" in func_name:
+                continue  # Skip known problematic functions
             dll_function_array.append((dll_path, func_name))
             total_functions += 1
     
