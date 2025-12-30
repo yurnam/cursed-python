@@ -1,27 +1,21 @@
-import sys
 
-sys.setrecursionlimit(324523409)
-
-
-class FuckUp(Exception):
+class __(Exception):
     def __init__(self):
-        print("This is a way to define functions using Exceptions")
-        self.definefunction()
+        self._()
+    def _(self):
 
-    def definefunction(self):
-            def test(input):
-                print(input)
-            self.test = test
+            class __(int):
+                def __init__(self):
+                    print(7)
 
-
-
+            def _(_):
+                print(_)
+            self._ = _
 
 
 if __name__ == '__main__':
     try:
-        raise FuckUp
-
-    except FuckUp as e:
-        e.test(33)
-        print("Caught the FuckUp exception")
-        print(e)
+        raise __
+    except __ as _:
+        _._(33)
+        __ = __()

