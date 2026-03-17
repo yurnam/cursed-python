@@ -478,8 +478,7 @@ def worker_process(target_dll_path, dll_function_array, files_list):
             param_sets_to_use.append(current_parameter_sets[param_index])
 
         for func_name, param_set in zip(functions_to_execute, param_sets_to_use):
-            if "LockWorks" in func_name:
-                continue
+            print(f"[*] Executing {func_name} with : {len(param_set)} parameters")
             try:
                 random.seed(random.getrandbits(32))
 

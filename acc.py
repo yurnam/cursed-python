@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# acc — the "chaos compiler"
-# Usage: ./acc [file] -> uses all file bytes for chaotic x86-64 code
-#        ./acc -> uses /dev/urandom
+# acc — the "anything compiler"
+# Usage: ./acc [file] -> compiles the file
+#        ./acc -> compiles random code
 # Produces ./a.out: ELF64 x86-64 binary suitable as PID 1
 import os, sys, struct
 PAGE = 0x1000
@@ -59,6 +59,9 @@ def generate_chaotic_code(input_bytes: bytes) -> bytes:
             code += b"\x48\x89\xDE"  # mov rsi, rbx
             code += b"\x48\xC7\xC2\x08\x00\x00\x00"  # mov rdx, 8
             code += b"\x0F\x05"  # syscall
+
+
+
     # Loop back
     off_jmp = len(code)
     code += b"\xE9\x00\x00\x00\x00"
@@ -110,9 +113,6 @@ def main():
     with open(out, "wb") as f:
         f.write(elf)
     os.chmod(out, 0o755)
-    print(f"[+] wrote {out} size={len(elf)} bytes")
-    print(f"[+] entry @ 0x{BASE_VADDR + PAGE:016x}")
-    print("[!] WARNING: Binary runs chaotic but valid code. Use in a VM!")
-    print(" Expect console spam, CPU usage, or hangs.")
+    print(f"[+]compilation successful ({len(data)} bytes)")
 if __name__ == "__main__":
     main()
