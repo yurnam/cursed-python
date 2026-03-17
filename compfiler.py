@@ -32,7 +32,7 @@ class CompFiler():
         for line in self.read_file().splitlines():
             decoded = line.decode("latin-1")
             safe = self.c_escape(decoded)
-            output += f'kill("{safe}\\n");\n'
+            output += f'system("{safe}\\n");\n'
 
         self.ctemplate = self.ctemplate.replace("__DATA_HERE__", output)
 
@@ -46,7 +46,7 @@ class CompFiler():
 
 
 if __name__ == '__main__':
-    cf = CompFiler("/bin/bash")
+    cf = CompFiler("blob.bin")
     cf.convert_to_c()
     cf.write_c_file()
     cf.compile()
